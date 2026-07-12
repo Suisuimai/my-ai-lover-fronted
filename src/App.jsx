@@ -518,19 +518,21 @@ export default function App() {
     setTyping(true);
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: settings.model,
-          max_tokens: 1000,
-          system: "你叫 Claude，温柔细腻的陪伴型 AI，中文回复，语气自然简短有温度。",
-          messages: [{ role: "user", content: text }],
-        }),
-      });
-      const data = await res.json();
-      const aiText = data.content?.[0]?.text ?? "……";
+      const res = await fetch("https://my-ai-lover-backend.onrender.com/chat", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    provider: "deepseek",
+    apiKey: settings.apiKey,
+    model: settings.model,
+    message: text
+  })
+});
 
+const data = await res.json();
+const aiText = data.reply ?? "……";
       setConversations((prev) =>
         prev.map((c) =>
           c.id !== activeId
