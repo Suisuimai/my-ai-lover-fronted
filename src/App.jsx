@@ -125,11 +125,19 @@ function SettingsModal({ open, onClose, settings, onSave }) {
   };
 
   const MODEL_META = {
-    "claude-sonnet-4-6": { icon: "ti-bolt",    tag: "日常推荐", desc: "速度与质量的最佳平衡，适合大多数对话场景" },
-    "claude-opus-4-6":   { icon: "ti-brain",   tag: "深度模式", desc: "最强推理能力，适合复杂分析与创作" },
-    "claude-haiku-4-5":  { icon: "ti-feather", tag: "极速模式", desc: "响应最快，适合简短问答与即时反馈" },
-  };
-  const meta = MODEL_META[model];
+  "deepseek-v4-flash": {
+    icon: "ti-bolt",
+    tag: "日常推荐",
+    desc: "速度快、成本低，适合大多数聊天场景"
+  },
+  "deepseek-v4-pro": {
+    icon: "ti-brain",
+    tag: "深度模式",
+    desc: "更强推理能力，适合复杂分析与长对话"
+  }
+};
+
+const meta = MODEL_META[model];
 
   const S = {
     overlay: {
@@ -191,9 +199,8 @@ function SettingsModal({ open, onClose, settings, onSave }) {
           <div style={{position:"relative"}}>
             <select value={model} onChange={(e)=>setModel(e.target.value)}
               style={{width:"100%",height:42,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 36px 0 14px",background:"rgba(0,0,0,0.02)",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:300,color:"#1C1C1E",appearance:"none",cursor:"pointer",outline:"none"}}>
-              <option value="claude-sonnet-4-6">Claude Sonnet 4.6　·　均衡首选</option>
-              <option value="claude-opus-4-6">Claude Opus 4.6　·　深度思考</option>
-              <option value="claude-haiku-4-5">Claude Haiku 4.5　·　轻快响应</option>
+              <option value="deepseek-v4-flash">DeepSeek V4 Flash · 快速响应</option>
+<option value="deepseek-v4-pro">DeepSeek V4 Pro · 深度思考</option>
             </select>
             <i className="ti ti-chevron-down" style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:"#8E8E93",fontSize:14,pointerEvents:"none"}} />
           </div>
@@ -430,9 +437,8 @@ function InputBar({ onSend, model, onModelChange }) {
           </button>
           <select value={model} onChange={(e)=>onModelChange(e.target.value)}
             style={{height:26,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 20px 0 8px",background:"rgba(0,0,0,0.03)",fontFamily:"'DM Sans',sans-serif",fontSize:10,fontWeight:400,color:"#8E8E93",appearance:"none",cursor:"pointer",outline:"none",letterSpacing:"0.02em",flexShrink:0,backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,backgroundRepeat:"no-repeat",backgroundPosition:"right 5px center"}}>
-            <option value="claude-sonnet-4-6">Sonnet</option>
-            <option value="claude-opus-4-6">Opus</option>
-            <option value="claude-haiku-4-5">Haiku</option>
+            <option value="deepseek-v4-flash">Flash</option>
+<option value="deepseek-v4-pro">Pro</option>
           </select>
           <div style={{flex:1}} />
           <button style={{width:32,height:32,borderRadius:"50%",border:"none",background:"rgba(0,0,0,0.05)",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
@@ -461,10 +467,10 @@ export default function App() {
   const [conversations, setConversations] = useState(INITIAL_CONVERSATIONS);
   const [activeId,      setActiveId]      = useState(1);               // 当前对话 id
   const [typing,        setTyping]        = useState(false);
-  const [settings,      setSettings]      = useState({
-    apiKey: "",
-    model:  "claude-sonnet-4-6",
-  });
+  const [settings, setSettings] = useState({
+  apiKey: "",
+  model: "deepseek-v4-flash",
+});
 
   const msgEndRef = useRef(null);
 
