@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { api } from "./api.js";
 
 // ══════════════════════════════════════════
 //  字体注入
@@ -77,6 +78,8 @@ const INITIAL_CONVERSATIONS = [
 
 const GROUP_ORDER = ["今天", "昨天", "上周", "更早"];
 
+void INITIAL_CONVERSATIONS;
+
 function getNow() {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -86,8 +89,7 @@ function getNow() {
 //  SettingsModal
 // ══════════════════════════════════════════
 function SettingsModal({ open, onClose, settings, onSave }) {
-  const [apiKey, setApiKey]     = useState(settings.apiKey);
-  const [keyVisible, setKeyVis] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState(settings.systemPrompt ?? "");
   const [model, setModel]       = useState(settings.model);
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared]   = useState(false);
@@ -96,7 +98,8 @@ function SettingsModal({ open, onClose, settings, onSave }) {
 
   // 同步外部 settings
   useEffect(() => {
-    if (open) { setApiKey(settings.apiKey); setModel(settings.model); setSaved(false); }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the modal draft whenever it opens.
+    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setModel(settings.model); setSaved(false); }
   }, [open, settings]);
 
   // ESC 关闭
@@ -111,8 +114,8 @@ function SettingsModal({ open, onClose, settings, onSave }) {
 
   if (!open) return null;
 
-  const handleSave = () => {
-    onSave({ apiKey, model });
+  const handleSave = async () => {
+    await onSave({ systemPrompt, model });
     setSaved(true);
     setTimeout(() => { setSaved(false); onClose(); }, 900);
   };
@@ -177,20 +180,17 @@ const meta = MODEL_META[model];
         <div style={{padding:"20px 20px 0"}}>
 
           {/* API Key */}
-          <label style={S.label}>API KEY</label>
+          <label style={S.label}>SYSTEM PROMPT</label>
           <div style={{display:"flex",alignItems:"center",gap:8,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 10px 0 14px",background:"rgba(0,0,0,0.02)"}}>
-            <input
-              type={keyVisible?"text":"password"}
-              value={apiKey}
-              onChange={(e)=>setApiKey(e.target.value)}
-              placeholder="sk-ant-api03-···"
-              style={{flex:1,border:"none",outline:"none",background:"transparent",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:300,color:"#1C1C1E",height:42}}
+            <textarea
+              type="text"
+              value={systemPrompt}
+              onChange={(e)=>setSystemPrompt(e.target.value)}
+              placeholder="Describe your companion's personality and boundaries..."
+              style={{flex:1,border:"none",outline:"none",background:"transparent",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:300,color:"#1C1C1E",minHeight:72,padding:"10px 0",resize:"vertical"}}
             />
-            <button onClick={()=>setKeyVis(v=>!v)} style={{border:"none",background:"none",color:"#8E8E93",cursor:"pointer",padding:"6px 2px",fontSize:15,display:"flex",alignItems:"center"}}>
-              <i className={`ti ${keyVisible?"ti-eye-off":"ti-eye"}`} />
-            </button>
           </div>
-          <p style={{fontSize:10.5,fontWeight:300,color:"#C7C7CC",marginTop:5,paddingLeft:2}}>Key 仅存于本地，不会上传至任何服务器</p>
+          <p style={{fontSize:10.5,fontWeight:300,color:"#C7C7CC",marginTop:5,paddingLeft:2}}>Saved to your private app settings and applied to every conversation.</p>
 
           <div style={S.divider} />
 
@@ -208,7 +208,7 @@ const meta = MODEL_META[model];
             <div style={{marginTop:8,padding:"10px 12px",background:"rgba(0,0,0,0.02)",borderRadius:10,border:"0.5px solid rgba(0,0,0,0.05)",display:"flex",gap:8,alignItems:"flex-start"}}>
               <i className={`ti ${meta.icon}`} style={{color:"#8E8E93",fontSize:14,marginTop:1}} />
               <div>
-                <span style={{fontSize:11,fontWeight:400,color:"#3C3C3E"}}>{meta.tag}　</span>
+                <span style={{fontSize:11,fontWeight:400,color:"#3C3C3E"}}>{meta.tag}{" "}</span>
                 <span style={{fontSize:11,fontWeight:300,color:"#8E8E93"}}>{meta.desc}</span>
               </div>
             </div>
@@ -253,10 +253,12 @@ const meta = MODEL_META[model];
 //  Sidebar
 // ══════════════════════════════════════════
 function Sidebar({ open, onClose, conversations, activeId, onSelect, onNewChat }) {
-  const grouped = GROUP_ORDER.reduce((acc, g) => {
-    acc[g] = conversations.filter((c) => c.time === g);
-    return acc;
-  }, {});
+const grouped = {
+  今天: conversations,
+  昨天: [],
+  上周: [],
+  更早: []
+};
 
   return (
     <>
@@ -464,11 +466,11 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // ── 数据状态 ─────────────────────────────
-  const [conversations, setConversations] = useState(INITIAL_CONVERSATIONS);
+  const [conversations, setConversations] = useState([]);
   const [activeId,      setActiveId]      = useState(1);               // 当前对话 id
   const [typing,        setTyping]        = useState(false);
   const [settings, setSettings] = useState({
-  apiKey: "",
+  systemPrompt: "",
   model: "deepseek-v4-flash",
 });
 
@@ -476,12 +478,58 @@ export default function App() {
 
   // ── 派生：当前对话 ────────────────────────
   const activeConv = conversations.find((c) => c.id === activeId);
-  const messages   = activeConv?.messages ?? [];
+const messages = useMemo(() => activeConv?.messages ?? [], [activeConv]);
+  const activeIsNew = activeConv?.isNew === true;
 
   // 滚动到底部
   useEffect(() => {
     msgEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing, activeId]);
+
+useEffect(() => {
+
+  async function loadSessions() {
+
+try {
+const data = await api("/sessions");
+
+const mapped = await Promise.all(data.map(async (session) => {
+  const sessionMessages = await api(`/messages/${session.id}`);
+
+  return {
+    id: session.id,
+    title: session.name,
+    messages: sessionMessages.map((message) => ({
+      id: message.id,
+      role: message.role === "assistant" ? "ai" : message.role,
+      text: message.content,
+      ts: new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    })),
+  };
+}));
+
+setConversations(mapped);
+if (mapped.length > 0) {
+  setActiveId(mapped[0].id);
+}
+} catch (error) {
+  console.error("Failed to load sessions:", error);
+}
+
+  }
+
+  loadSessions();
+
+}, []);
+
+useEffect(() => {
+  api("/settings")
+    .then((data) => setSettings(data.settings))
+    .catch((error) => console.error("Failed to load settings:", error));
+}, []);
+
+
+
 
   // ── 切换历史对话 ──────────────────────────
   // 点击侧边栏某条 → 把 activeId 切成对应 id，消息列表自动跟着换
@@ -496,6 +544,7 @@ export default function App() {
     const newConv = {
       id: newId,
       title: "新对话",
+      isNew: true,
       time: "今天",
       messages: [{ id: 1, role: "ai", text: "你好呀，想聊些什么？", ts: getNow() }],
     };
@@ -524,28 +573,33 @@ export default function App() {
     setTyping(true);
 
     try {
-      const res = await fetch("https://my-ai-lover-backend.onrender.com/chat", {
+      const data = await api("/chat", {
   method: "POST",
   headers: {
     "Content-Type": "application/json"
   },
   body: JSON.stringify({
-    provider: "deepseek",
-    apiKey: settings.apiKey,
     model: settings.model,
-    message: text
+    message: text,
+    sessionId: activeIsNew ? undefined : activeId
   })
 });
 
-const data = await res.json();
 const aiText = data.reply ?? "……";
       setConversations((prev) =>
         prev.map((c) =>
           c.id !== activeId
             ? c
-            : { ...c, messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: aiText, ts: getNow() }] }
+            : {
+                ...c,
+                id: data.sessionId ?? c.id,
+                isNew: false,
+                title: data.title ?? c.title,
+                messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: aiText, ts: getNow() }],
+              }
         )
       );
+      if (activeIsNew && data.sessionId) setActiveId(data.sessionId);
     } catch {
       setConversations((prev) =>
         prev.map((c) =>
@@ -557,11 +611,16 @@ const aiText = data.reply ?? "……";
     } finally {
       setTyping(false);
     }
-  }, [activeId, settings.model]);
+  }, [activeId, activeIsNew, settings.model]);
 
   // ── 保存设置 ──────────────────────────────
-  const handleSaveSettings = useCallback((newSettings) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+  const handleSaveSettings = useCallback(async (newSettings) => {
+    const data = await api("/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newSettings),
+    });
+    setSettings(data.settings);
   }, []);
 
   // ─────────────────────────────────────────
