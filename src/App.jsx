@@ -638,12 +638,13 @@ const aiText = data.reply ?? "……";
         )
       );
       if (activeIsNew && data.sessionId) setActiveId(data.sessionId);
-    } catch {
+    } catch (error) {
+      console.error("Chat failed:", error);
       setConversations((prev) =>
         prev.map((c) =>
           c.id !== activeId
             ? c
-            : { ...c, messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: "有点走神了，再说一遍？", ts: getNow() }] }
+            : { ...c, messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: `Request failed: ${error.message}`, ts: getNow() }] }
         )
       );
     } finally {
