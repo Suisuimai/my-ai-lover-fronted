@@ -91,6 +91,8 @@ function getNow() {
 function SettingsModal({ open, onClose, settings, onSave }) {
   const [systemPrompt, setSystemPrompt] = useState(settings.systemPrompt ?? "");
   const [model, setModel]       = useState(settings.model);
+  const [temperature, setTemperature] = useState(settings.temperature ?? 0.8);
+  const [recentMessageLimit, setRecentMessageLimit] = useState(settings.recentMessageLimit ?? 12);
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared]   = useState(false);
   const [saved, setSaved]       = useState(false);
@@ -99,7 +101,7 @@ function SettingsModal({ open, onClose, settings, onSave }) {
   // 同步外部 settings
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the modal draft whenever it opens.
-    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setModel(settings.model); setSaved(false); }
+    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setModel(settings.model); setTemperature(settings.temperature ?? 0.8); setRecentMessageLimit(settings.recentMessageLimit ?? 12); setSaved(false); }
   }, [open, settings]);
 
   // ESC 关闭
@@ -115,7 +117,7 @@ function SettingsModal({ open, onClose, settings, onSave }) {
   if (!open) return null;
 
   const handleSave = async () => {
-    await onSave({ systemPrompt, model });
+    await onSave({ systemPrompt, model, temperature: Number(temperature), recentMessageLimit: Number(recentMessageLimit) });
     setSaved(true);
     setTimeout(() => { setSaved(false); onClose(); }, 900);
   };
@@ -191,6 +193,17 @@ const meta = MODEL_META[model];
             />
           </div>
           <p style={{fontSize:10.5,fontWeight:300,color:"#C7C7CC",marginTop:5,paddingLeft:2}}>Saved to your private app settings and applied to every conversation.</p>
+
+          <div style={{display:"flex",gap:10,marginTop:14}}>
+            <div style={{flex:1}}>
+              <label style={S.label}>TEMPERATURE</label>
+              <input type="number" min="0" max="2" step="0.1" value={temperature} onChange={(e)=>setTemperature(e.target.value)} style={{width:"100%",height:38,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:12,padding:"0 12px",background:"rgba(0,0,0,0.02)",fontSize:13,outline:"none"}} />
+            </div>
+            <div style={{flex:1}}>
+              <label style={S.label}>RECENT MESSAGES</label>
+              <input type="number" min="2" step="2" value={recentMessageLimit} onChange={(e)=>setRecentMessageLimit(e.target.value)} style={{width:"100%",height:38,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:12,padding:"0 12px",background:"rgba(0,0,0,0.02)",fontSize:13,outline:"none"}} />
+            </div>
+          </div>
 
           <div style={S.divider} />
 
@@ -524,7 +537,10 @@ if (mapped.length > 0) {
 
 useEffect(() => {
   api("/settings")
-    .then((data) => setSettings(data.settings))
+    .then((data) => {
+      const savedModel = window.localStorage.getItem("my-ai-lover:model");
+      setSettings({ ...data.settings, model: savedModel || data.settings.model });
+    })
     .catch((error) => console.error("Failed to load settings:", error));
 }, []);
 
@@ -554,6 +570,28 @@ useEffect(() => {
   }, []);
 
   // ── 发送消息 ──────────────────────────────
+  const handleRenameConversation = useCallback(async () => {
+    if (!activeConv?.id || activeIsNew) return;
+    const name = window.prompt("Rename conversation", activeConv.title);
+    if (!name?.trim()) return;
+    const data = await api(`/sessions/${activeConv.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    setConversations((prev) => prev.map((item) => item.id === activeConv.id ? { ...item, title: data.session.name } : item));
+  }, [activeConv, activeIsNew]);
+
+  const handleDeleteConversation = useCallback(async () => {
+    if (!activeConv?.id || activeIsNew || !window.confirm(`Delete “${activeConv.title}” and its messages?`)) return;
+    await api(`/sessions/${activeConv.id}`, { method: "DELETE" });
+    setConversations((prev) => {
+      const next = prev.filter((item) => item.id !== activeConv.id);
+      setActiveId(next[0]?.id ?? null);
+      return next;
+    });
+  }, [activeConv, activeIsNew]);
+
   const handleSend = useCallback(async (text) => {
     const userMsg = { id: Date.now(), role: "user", text, ts: getNow() };
 
@@ -620,6 +658,7 @@ const aiText = data.reply ?? "……";
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newSettings),
     });
+    window.localStorage.setItem("my-ai-lover:model", data.settings.model);
     setSettings(data.settings);
   }, []);
 
@@ -667,6 +706,16 @@ const aiText = data.reply ?? "……";
               <i className="ti ti-edit" />
             </button>
             {/* 设置 — 点击打开 SettingsModal */}
+            <button onClick={handleRenameConversation} disabled={activeIsNew || !activeConv}
+              title="Rename conversation"
+              style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:activeIsNew?"default":"pointer",opacity:activeIsNew?0.35:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
+              <i className="ti ti-pencil" />
+            </button>
+            <button onClick={handleDeleteConversation} disabled={activeIsNew || !activeConv}
+              title="Delete conversation"
+              style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:activeIsNew?"default":"pointer",opacity:activeIsNew?0.35:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
+              <i className="ti ti-trash" />
+            </button>
             <button onClick={() => setSettingsOpen(true)}
               style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}
               onMouseEnter={e=>{e.currentTarget.style.background="rgba(0,0,0,0.05)";e.currentTarget.style.color="#1C1C1E";}}
@@ -704,7 +753,10 @@ const aiText = data.reply ?? "……";
         <InputBar
           onSend={handleSend}
           model={settings.model}
-          onModelChange={(m) => setSettings((s) => ({ ...s, model: m }))}
+          onModelChange={(m) => {
+            window.localStorage.setItem("my-ai-lover:model", m);
+            setSettings((s) => ({ ...s, model: m }));
+          }}
         />
       </main>
 
