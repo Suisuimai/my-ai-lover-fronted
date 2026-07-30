@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { api } from "./api.js";
+import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════
 //  字体注入
@@ -88,7 +89,7 @@ function getNow() {
 // ══════════════════════════════════════════
 //  SettingsModal
 // ══════════════════════════════════════════
-function SettingsModal({ open, onClose, settings, onSave }) {
+function SettingsModal({ open, onClose, settings, onSave, onSignOut }) {
   const [systemPrompt, setSystemPrompt] = useState(settings.systemPrompt ?? "");
   const [model, setModel]       = useState(settings.model);
   const [temperature, setTemperature] = useState(settings.temperature ?? 0.8);
@@ -96,13 +97,29 @@ function SettingsModal({ open, onClose, settings, onSave }) {
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared]   = useState(false);
   const [saved, setSaved]       = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [credentialStatus, setCredentialStatus] = useState({});
+  const [credentialDrafts, setCredentialDrafts] = useState({});
+  const [credentialBusy, setCredentialBusy] = useState("");
+  const [credentialMessage, setCredentialMessage] = useState("");
   const overlayRef              = useRef(null);
 
   // 同步外部 settings
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the modal draft whenever it opens.
-    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setModel(settings.model); setTemperature(settings.temperature ?? 0.8); setRecentMessageLimit(settings.recentMessageLimit ?? 12); setSaved(false); }
+    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setModel(settings.model); setTemperature(settings.temperature ?? 0.8); setRecentMessageLimit(settings.recentMessageLimit ?? 12); setSaved(false); setSaveError(""); }
   }, [open, settings]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    api("/settings/credentials").then((data) => {
+      if (active) setCredentialStatus(data.credentials || {});
+    }).catch((error) => {
+      if (active) setCredentialMessage(error.message);
+    });
+    return () => { active = false; };
+  }, [open]);
 
   // ESC 关闭
   useEffect(() => {
@@ -117,9 +134,25 @@ function SettingsModal({ open, onClose, settings, onSave }) {
   if (!open) return null;
 
   const handleSave = async () => {
-    await onSave({ systemPrompt, model, temperature: Number(temperature), recentMessageLimit: Number(recentMessageLimit) });
-    setSaved(true);
-    setTimeout(() => { setSaved(false); onClose(); }, 900);
+    try {
+      setSaveError("");
+      await onSave({ systemPrompt, model, temperature: Number(temperature), recentMessageLimit: Number(recentMessageLimit) });
+      setSaved(true);
+      setTimeout(() => { setSaved(false); onClose(); }, 900);
+    } catch (error) { setSaveError(error.message); }
+  };
+
+  const saveCredential = async (provider) => {
+    const apiKey = credentialDrafts[provider]?.trim();
+    if (!apiKey) return setCredentialMessage("Paste an API key before saving.");
+    try {
+      setCredentialBusy(provider); setCredentialMessage("");
+      await api(`/settings/credentials/${provider}`, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ apiKey }) });
+      setCredentialDrafts((drafts) => ({ ...drafts, [provider]: "" }));
+      setCredentialStatus((status) => ({ ...status, [provider]: { configured:true } }));
+      setCredentialMessage(`${provider} key saved securely.`);
+    } catch (error) { setCredentialMessage(error.message); }
+    finally { setCredentialBusy(""); }
   };
 
   const handleClear = () => {
@@ -139,7 +172,11 @@ function SettingsModal({ open, onClose, settings, onSave }) {
     icon: "ti-brain",
     tag: "深度模式",
     desc: "更强推理能力，适合复杂分析与长对话"
-  }
+  },
+  "gpt-5-mini": { icon:"ti-sparkles", tag:"OpenAI", desc:"Fast GPT model" },
+  "gpt-5": { icon:"ti-sparkles", tag:"OpenAI", desc:"Stronger GPT model" },
+  "claude-sonnet-4-20250514": { icon:"ti-message-circle", tag:"Anthropic", desc:"Claude Sonnet" },
+  "claude-opus-4-20250514": { icon:"ti-message-circle", tag:"Anthropic", desc:"Claude Opus" }
 };
 
 const meta = MODEL_META[model];
@@ -214,6 +251,10 @@ const meta = MODEL_META[model];
               style={{width:"100%",height:42,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 36px 0 14px",background:"rgba(0,0,0,0.02)",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:300,color:"#1C1C1E",appearance:"none",cursor:"pointer",outline:"none"}}>
               <option value="deepseek-v4-flash">DeepSeek V4 Flash · 快速响应</option>
 <option value="deepseek-v4-pro">DeepSeek V4 Pro · 深度思考</option>
+              <option value="gpt-5-mini">GPT-5 mini</option>
+              <option value="gpt-5">GPT-5</option>
+              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+              <option value="claude-opus-4-20250514">Claude Opus 4</option>
             </select>
             <i className="ti ti-chevron-down" style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:"#8E8E93",fontSize:14,pointerEvents:"none"}} />
           </div>
@@ -230,6 +271,24 @@ const meta = MODEL_META[model];
           <div style={S.divider} />
 
           {/* 清除记忆 */}
+          <label style={S.label}>MODEL API KEYS</label>
+          <p style={{fontSize:10.5,fontWeight:300,color:"#8E8E93",lineHeight:1.45,margin:"-2px 0 10px"}}>Keys are encrypted before storage and are never shown again.</p>
+          {[['deepseek','DeepSeek'],['openai','OpenAI / GPT'],['anthropic','Anthropic / Claude']].map(([provider, label]) => (
+            <div key={provider} style={{marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                <span style={{fontSize:12,color:"#3C3C3E"}}>{label}</span>
+                <span style={{fontSize:10,color:credentialStatus[provider]?.configured ? "#34C759" : "#8E8E93"}}>{credentialStatus[provider]?.configured ? "Configured" : "Not configured"}</span>
+              </div>
+              <div style={{display:"flex",gap:7}}>
+                <input type="password" autoComplete="new-password" value={credentialDrafts[provider] || ""} onChange={(e)=>setCredentialDrafts((drafts)=>({...drafts,[provider]:e.target.value}))} placeholder={credentialStatus[provider]?.configured ? "Paste a new key to replace" : "Paste API key"} style={{minWidth:0,flex:1,height:36,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:11,padding:"0 10px",background:"rgba(0,0,0,0.02)",fontSize:12,outline:"none"}} />
+                <button onClick={()=>saveCredential(provider)} disabled={credentialBusy===provider} style={{height:36,padding:"0 10px",border:"none",borderRadius:11,background:"#1C1C1E",color:"#fff",fontSize:11,cursor:"pointer"}}>{credentialBusy===provider ? "Saving" : "Save"}</button>
+              </div>
+            </div>
+          ))}
+          {credentialMessage && <p style={{fontSize:10.5,color:"#8E8E93",margin:"2px 0 0"}}>{credentialMessage}</p>}
+
+          <div style={S.divider} />
+
           <label style={S.label}>MEMORY</label>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",border:"0.5px solid rgba(0,0,0,0.06)",borderRadius:14,background:"rgba(0,0,0,0.015)",marginBottom:0}}>
             <div>
@@ -247,6 +306,10 @@ const meta = MODEL_META[model];
 
         {/* 底部 */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,padding:"16px 20px 18px",borderTop:"0.5px solid rgba(0,0,0,0.06)",marginTop:18}}>
+          <button onClick={onSignOut}
+            style={{height:34,padding:"0 12px",borderRadius:17,border:"none",background:"transparent",color:"#FF3B30",fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:300,cursor:"pointer",marginRight:"auto"}}>
+            Sign out
+          </button>
           <button onClick={onClose}
             style={{height:34,padding:"0 18px",borderRadius:17,border:"0.5px solid rgba(0,0,0,0.1)",background:"transparent",color:"#8E8E93",fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:300,cursor:"pointer"}}>
             取消
@@ -454,6 +517,10 @@ function InputBar({ onSend, model, onModelChange }) {
             style={{height:26,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 20px 0 8px",background:"rgba(0,0,0,0.03)",fontFamily:"'DM Sans',sans-serif",fontSize:10,fontWeight:400,color:"#8E8E93",appearance:"none",cursor:"pointer",outline:"none",letterSpacing:"0.02em",flexShrink:0,backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,backgroundRepeat:"no-repeat",backgroundPosition:"right 5px center"}}>
             <option value="deepseek-v4-flash">Flash</option>
 <option value="deepseek-v4-pro">Pro</option>
+            <option value="gpt-5-mini">GPT-5 mini</option>
+            <option value="gpt-5">GPT-5</option>
+            <option value="claude-sonnet-4-20250514">Claude Sonnet</option>
+            <option value="claude-opus-4-20250514">Claude Opus</option>
           </select>
           <div style={{flex:1}} />
           <button style={{width:32,height:32,borderRadius:"50%",border:"none",background:"rgba(0,0,0,0.05)",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
@@ -663,6 +730,10 @@ const aiText = data.reply ?? "……";
     setSettings(data.settings);
   }, []);
 
+  const handleSignOut = useCallback(async () => {
+    await supabase.auth.signOut();
+  }, []);
+
   // ─────────────────────────────────────────
   return (
     <div style={{display:"flex",height:"100vh",width:"100%",overflow:"hidden",background:"#F7F6F3",fontFamily:"'DM Sans','Noto Sans KR',system-ui,sans-serif"}}>
@@ -767,6 +838,7 @@ const aiText = data.reply ?? "……";
         onClose={() => setSettingsOpen(false)}
         settings={settings}
         onSave={handleSaveSettings}
+        onSignOut={handleSignOut}
       />
 
       <style>{`
