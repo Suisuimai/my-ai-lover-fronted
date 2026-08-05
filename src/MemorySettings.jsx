@@ -13,6 +13,9 @@ function parseTriggers(value) {
 function MemoryEditor({ memory, onSaved, onDeleted }) {
   const [draft, setDraft] = useState(memory);
   const [busy, setBusy] = useState(false);
+  const recallText = memory.recall_count > 0
+    ? `Recalled ${memory.recall_count} time${memory.recall_count === 1 ? "" : "s"}${memory.last_recalled_at ? ` · last ${new Date(memory.last_recalled_at).toLocaleString()}` : ""}`
+    : "Not recalled yet";
 
   async function save() {
     setBusy(true);
@@ -63,6 +66,7 @@ function MemoryEditor({ memory, onSaved, onDeleted }) {
       <input value={(draft.triggers || []).join(", ")} onChange={(event)=>setDraft({...draft,triggers:parseTriggers(event.target.value)})}
         placeholder="Recall phrases (comma, 、, semicolon, or new line)"
         style={{width:"100%",boxSizing:"border-box",height:32,marginTop:6,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,padding:"0 9px",fontSize:11}} />
+      <p style={{fontSize:9.5,color:"#8E8E93",margin:"5px 2px 0"}}>{recallText}</p>
       <div style={{display:"flex",gap:8,marginTop:7}}>
         <button type="button" onClick={save} disabled={busy} style={{border:0,borderRadius:12,padding:"6px 11px",fontSize:10.5,cursor:"pointer"}}>Save</button>
         <button type="button" onClick={remove} disabled={busy} style={{border:0,background:"transparent",color:"#FF3B30",fontSize:10.5,cursor:"pointer"}}>Delete</button>
