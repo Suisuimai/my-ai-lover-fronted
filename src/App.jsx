@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { api } from "./api.js";
+import CompanionSettings from "./CompanionSettings.jsx";
+import MemorySettings from "./MemorySettings.jsx";
 import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════
@@ -194,7 +196,7 @@ const meta = MODEL_META[model];
       background:"#fff",borderRadius:20,
       border:"0.5px solid rgba(0,0,0,0.08)",
       boxShadow:"0 24px 64px rgba(0,0,0,0.12),0 2px 8px rgba(0,0,0,0.06)",
-      overflow:"hidden",
+      overflowY:"auto",maxHeight:"90vh",
       fontFamily:"'DM Sans','Noto Sans KR',system-ui,sans-serif",
     },
     label: { display:"block",fontSize:9.5,fontWeight:400,color:"#8E8E93",letterSpacing:"0.09em",marginBottom:8 },
@@ -219,7 +221,7 @@ const meta = MODEL_META[model];
         <div style={{padding:"20px 20px 0"}}>
 
           {/* API Key */}
-          <label style={S.label}>SYSTEM PROMPT</label>
+          <label style={S.label}>ADDITIONAL INSTRUCTIONS</label>
           <div style={{display:"flex",alignItems:"center",gap:8,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 10px 0 14px",background:"rgba(0,0,0,0.02)"}}>
             <textarea
               type="text"
@@ -229,7 +231,10 @@ const meta = MODEL_META[model];
               style={{flex:1,border:"none",outline:"none",background:"transparent",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:300,color:"#1C1C1E",minHeight:72,padding:"10px 0",resize:"vertical"}}
             />
           </div>
-          <p style={{fontSize:10.5,fontWeight:300,color:"#C7C7CC",marginTop:5,paddingLeft:2}}>Saved to your private app settings and applied to every conversation.</p>
+          <p style={{fontSize:10.5,fontWeight:300,color:"#C7C7CC",marginTop:5,paddingLeft:2}}>Optional legacy instructions. Core identity belongs in the companion profile below.</p>
+
+          <CompanionSettings />
+          <MemorySettings />
 
           <div style={{display:"flex",gap:10,marginTop:14}}>
             <div style={{flex:1}}>
@@ -305,6 +310,11 @@ const meta = MODEL_META[model];
         </div>
 
         {/* 底部 */}
+        {saveError && (
+          <p role="alert" style={{fontSize:10.5,color:"#FF3B30",margin:"12px 20px 0"}}>
+            {saveError}
+          </p>
+        )}
         <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,padding:"16px 20px 18px",borderTop:"0.5px solid rgba(0,0,0,0.06)",marginTop:18}}>
           <button onClick={onSignOut}
             style={{height:34,padding:"0 12px",borderRadius:17,border:"none",background:"transparent",color:"#FF3B30",fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:300,cursor:"pointer",marginRight:"auto"}}>
