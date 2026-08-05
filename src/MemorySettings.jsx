@@ -12,6 +12,7 @@ function parseTriggers(value) {
 
 function MemoryEditor({ memory, onSaved, onDeleted }) {
   const [draft, setDraft] = useState(memory);
+  const [triggerText, setTriggerText] = useState((memory.triggers || []).join(", "));
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -23,11 +24,13 @@ function MemoryEditor({ memory, onSaved, onDeleted }) {
         body: JSON.stringify({
           category: draft.category,
           content: draft.content,
-          triggers: Array.isArray(draft.triggers) ? draft.triggers : [],
+          triggers: parseTriggers(triggerText),
           status: draft.status,
           isPermanent: draft.is_permanent,
         }),
       });
+      setDraft(data.memory);
+      setTriggerText((data.memory.triggers || []).join(", "));
       onSaved(data.memory);
     } finally { setBusy(false); }
   }
@@ -60,7 +63,7 @@ function MemoryEditor({ memory, onSaved, onDeleted }) {
       </div>
       <textarea value={draft.content} onChange={(event)=>setDraft({...draft,content:event.target.value})} rows={2}
         style={{width:"100%",boxSizing:"border-box",marginTop:8,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,padding:9,fontFamily:"inherit",fontSize:12,resize:"vertical"}} />
-      <input value={(draft.triggers || []).join(", ")} onChange={(event)=>setDraft({...draft,triggers:parseTriggers(event.target.value)})}
+      <input value={triggerText} onChange={(event)=>setTriggerText(event.target.value)}
         placeholder="Recall phrases (comma, 、, semicolon, or new line)"
         style={{width:"100%",boxSizing:"border-box",height:32,marginTop:6,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,padding:"0 9px",fontSize:11}} />
       <div style={{display:"flex",gap:8,marginTop:7}}>
