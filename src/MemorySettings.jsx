@@ -3,6 +3,13 @@ import { api } from "./api.js";
 
 const CATEGORIES = ["preference", "important_event", "promise", "unfinished", "relationship"];
 
+function parseTriggers(value) {
+  return [...new Set(String(value || "")
+    .split(/[,，、;；\n\r]+/u)
+    .map((item)=>item.trim())
+    .filter(Boolean))];
+}
+
 function MemoryEditor({ memory, onSaved, onDeleted }) {
   const [draft, setDraft] = useState(memory);
   const [busy, setBusy] = useState(false);
@@ -53,8 +60,8 @@ function MemoryEditor({ memory, onSaved, onDeleted }) {
       </div>
       <textarea value={draft.content} onChange={(event)=>setDraft({...draft,content:event.target.value})} rows={2}
         style={{width:"100%",boxSizing:"border-box",marginTop:8,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,padding:9,fontFamily:"inherit",fontSize:12,resize:"vertical"}} />
-      <input value={(draft.triggers || []).join(", ")} onChange={(event)=>setDraft({...draft,triggers:event.target.value.split(",").map((item)=>item.trim()).filter(Boolean)})}
-        placeholder="Recall phrases, separated by commas"
+      <input value={(draft.triggers || []).join(", ")} onChange={(event)=>setDraft({...draft,triggers:parseTriggers(event.target.value)})}
+        placeholder="Recall phrases (comma, 、, semicolon, or new line)"
         style={{width:"100%",boxSizing:"border-box",height:32,marginTop:6,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,padding:"0 9px",fontSize:11}} />
       <div style={{display:"flex",gap:8,marginTop:7}}>
         <button type="button" onClick={save} disabled={busy} style={{border:0,borderRadius:12,padding:"6px 11px",fontSize:10.5,cursor:"pointer"}}>Save</button>
@@ -78,7 +85,7 @@ export default function MemorySettings() {
     try {
       const data = await api("/memories", {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({...manual,triggers:manual.triggers.split(",").map((item)=>item.trim()).filter(Boolean)}),
+        body:JSON.stringify({...manual,triggers:parseTriggers(manual.triggers)}),
       });
       setMemories((items)=>[data.memory,...items]);
       setManual({category:"important_event",content:"",triggers:""});
