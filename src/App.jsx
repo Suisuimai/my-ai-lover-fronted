@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { api } from "./api.js";
 import CompanionSettings from "./CompanionSettings.jsx";
+import FollowUpSettings from "./FollowUpSettings.jsx";
 import MemorySettings from "./MemorySettings.jsx";
 import { supabase } from "./supabase.js";
 
@@ -235,6 +236,7 @@ const meta = MODEL_META[model];
 
           <CompanionSettings />
           <MemorySettings />
+          <FollowUpSettings />
 
           <div style={{display:"flex",gap:10,marginTop:14}}>
             <div style={{flex:1}}>
