@@ -437,7 +437,7 @@ const grouped = {
 // ══════════════════════════════════════════
 //  Bubble
 // ══════════════════════════════════════════
-function Bubble({ msg }) {
+function Bubble({ msg, onSuggestionResolve }) {
   const isUser = msg.role === "user";
   return (
     <div className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}
@@ -464,6 +464,23 @@ function Bubble({ msg }) {
         >
           {msg.text}
         </div>
+        {msg.followUpSuggestion && !msg.followUpSuggestion.resolved && (
+          <div style={{marginTop:6,padding:"8px 9px",borderRadius:10,background:"rgba(0,0,0,0.035)",border:"0.5px solid rgba(0,0,0,0.06)",fontSize:10.5,color:"#636366"}}>
+            <div>{msg.followUpSuggestion.reason}：将“{msg.followUpSuggestion.title}”标记为
+              {msg.followUpSuggestion.suggestedStatus === "completed" ? "已完成" :
+                msg.followUpSuggestion.suggestedStatus === "waiting" ? "等待中" : "已暂停"}？
+            </div>
+            <div style={{display:"flex",gap:6,marginTop:6}}>
+              <button type="button" onClick={()=>onSuggestionResolve(msg.id, msg.followUpSuggestion, true)}
+                style={{border:0,borderRadius:10,padding:"4px 8px",fontSize:10,cursor:"pointer"}}>确认</button>
+              <button type="button" onClick={()=>onSuggestionResolve(msg.id, msg.followUpSuggestion, false)}
+                style={{border:0,background:"transparent",padding:"4px 6px",fontSize:10,color:"#8E8E93",cursor:"pointer"}}>忽略</button>
+            </div>
+          </div>
+        )}
+        {msg.followUpSuggestion?.resolved === "confirmed" && (
+          <span style={{fontSize:9.5,color:"#34C759",marginTop:4}}>话题状态已更新</span>
+        )}
         <span style={{fontSize:9.5,color:"#8E8E93",marginTop:3,padding:"0 3px",fontWeight:300,letterSpacing:"0.03em"}}>
           {msg.ts}
         </span>
@@ -712,7 +729,7 @@ const aiText = data.reply ?? "……";
                 id: data.sessionId ?? c.id,
                 isNew: false,
                 title: data.title ?? c.title,
-                messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: aiText, ts: getNow() }],
+                messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: aiText, ts: getNow(), followUpSuggestion: data.followUpStatusSuggestion }],
               }
         )
       );
@@ -731,6 +748,21 @@ const aiText = data.reply ?? "……";
     }
   }, [activeId, activeIsNew, settings.model]);
 
+  const handleSuggestionResolve = useCallback(async (messageId, suggestion, confirmed) => {
+    if (confirmed) {
+      await api("/follow-ups/" + suggestion.followUpId, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: suggestion.suggestedStatus }),
+      });
+    }
+    setConversations((current) => current.map((conversation) => ({
+      ...conversation,
+      messages: conversation.messages.map((message) => message.id === messageId
+        ? { ...message, followUpSuggestion: { ...suggestion, resolved: confirmed ? "confirmed" : "dismissed" } }
+        : message),
+    })));
+  }, []);
   // ── 保存设置 ──────────────────────────────
   const handleSaveSettings = useCallback(async (newSettings) => {
     const data = await api("/settings", {
@@ -817,7 +849,7 @@ const aiText = data.reply ?? "……";
             <div style={{flex:1,height:"0.5px",background:"rgba(0,0,0,0.06)"}} />
           </div>
 
-          {messages.map((msg) => <Bubble key={msg.id} msg={msg} />)}
+          {messages.map((msg) => <Bubble key={msg.id} msg={msg} onSuggestionResolve={handleSuggestionResolve} />)}
 
           {/* 打字动画 */}
           {typing && (
