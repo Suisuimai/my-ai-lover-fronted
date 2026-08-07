@@ -479,7 +479,7 @@ function Bubble({ msg, onSuggestionResolve }) {
           </div>
         )}
         {msg.followUpSuggestion?.resolved === "confirmed" && (
-          <span style={{fontSize:9.5,color:"#34C759",marginTop:4}}>话题状态已更新</span>
+          <span style={{fontSize:9.5,color:"#34C759",marginTop:4}}>话题状态与长期记忆已更新</span>
         )}
         <span style={{fontSize:9.5,color:"#8E8E93",marginTop:3,padding:"0 3px",fontWeight:300,letterSpacing:"0.03em"}}>
           {msg.ts}
@@ -729,7 +729,7 @@ const aiText = data.reply ?? "……";
                 id: data.sessionId ?? c.id,
                 isNew: false,
                 title: data.title ?? c.title,
-                messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: aiText, ts: getNow(), followUpSuggestion: data.followUpStatusSuggestion }],
+                messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: aiText, ts: getNow(), followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }],
               }
         )
       );
@@ -750,10 +750,10 @@ const aiText = data.reply ?? "……";
 
   const handleSuggestionResolve = useCallback(async (messageId, suggestion, confirmed) => {
     if (confirmed) {
-      await api("/follow-ups/" + suggestion.followUpId, {
-        method: "PATCH",
+      await api("/follow-ups/" + suggestion.followUpId + "/confirm-status", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: suggestion.suggestedStatus }),
+        body: JSON.stringify({ status: suggestion.suggestedStatus, sessionId: suggestion.sessionId }),
       });
     }
     setConversations((current) => current.map((conversation) => ({
