@@ -466,10 +466,17 @@ function Bubble({ msg, onSuggestionResolve }) {
         </div>
         {msg.followUpSuggestion && !msg.followUpSuggestion.resolved && (
           <div style={{marginTop:6,padding:"8px 9px",borderRadius:10,background:"rgba(0,0,0,0.035)",border:"0.5px solid rgba(0,0,0,0.06)",fontSize:10.5,color:"#636366"}}>
-            <div>{msg.followUpSuggestion.reason}：将“{msg.followUpSuggestion.title}”标记为
+            <div>{msg.followUpSuggestion.reason}：
+              {msg.followUpSuggestion.action === "create" ? "创建" : "更新"}“{msg.followUpSuggestion.title}”，状态为
               {msg.followUpSuggestion.suggestedStatus === "completed" ? "已完成" :
-                msg.followUpSuggestion.suggestedStatus === "waiting" ? "等待中" : "已暂停"}？
+                msg.followUpSuggestion.suggestedStatus === "waiting" ? "等待中" :
+                  msg.followUpSuggestion.suggestedStatus === "active" ? "推进中" : "已暂停"}？
             </div>
+            {msg.followUpSuggestion.action === "create" && msg.followUpSuggestion.content && (
+              <div style={{marginTop:3,color:"#8E8E93"}}>{msg.followUpSuggestion.content}</div>
+            )}            {msg.followUpSuggestion.dueAt && (
+              <div style={{marginTop:3,color:"#8E8E93"}}>预计再次讨论：{new Date(msg.followUpSuggestion.dueAt).toLocaleString()}</div>
+            )}
             <div style={{display:"flex",gap:6,marginTop:6}}>
               <button type="button" onClick={()=>onSuggestionResolve(msg.id, msg.followUpSuggestion, true)}
                 style={{border:0,borderRadius:10,padding:"4px 8px",fontSize:10,cursor:"pointer"}}>确认</button>
@@ -750,10 +757,25 @@ const aiText = data.reply ?? "……";
 
   const handleSuggestionResolve = useCallback(async (messageId, suggestion, confirmed) => {
     if (confirmed) {
-      await api("/follow-ups/" + suggestion.followUpId + "/confirm-status", {
+      const isCreate = suggestion.action === "create";
+      await api(isCreate
+        ? "/follow-up-events/confirm-create"
+        : "/follow-ups/" + suggestion.followUpId + "/confirm-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: suggestion.suggestedStatus, sessionId: suggestion.sessionId }),
+        body: JSON.stringify(isCreate ? {
+          title: suggestion.title,
+          content: suggestion.content,
+          triggers: suggestion.triggers,
+          kind: suggestion.kind,
+          status: suggestion.suggestedStatus,
+          dueAt: suggestion.dueAt,
+          sessionId: suggestion.sessionId,
+        } : {
+          status: suggestion.suggestedStatus,
+          dueAt: suggestion.dueAt,
+          sessionId: suggestion.sessionId,
+        }),
       });
     }
     setConversations((current) => current.map((conversation) => ({
