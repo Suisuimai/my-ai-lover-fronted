@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api.js";
 
-const CATEGORIES = ["preference", "important_event", "promise", "unfinished", "relationship"];
+const CATEGORIES = ["preference", "important_event", "promise", "relationship"];
 
 function parseTriggers(value) {
   return [...new Set(String(value || "")

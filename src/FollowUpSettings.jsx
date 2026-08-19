@@ -115,8 +115,8 @@ export default function FollowUpSettings() {
 
   return (
     <details style={{marginTop:14,borderTop:"0.5px solid rgba(0,0,0,0.06)",paddingTop:14}}>
-      <summary style={{fontSize:12,fontWeight:500,cursor:"pointer",color:"#1C1C1E"}}>Unfinished topics ({items.filter((item)=>!["completed","cancelled"].includes(item.status)).length})</summary>
-      <p style={{fontSize:10.5,color:"#8E8E93"}}>Plans and open topics can evolve. You control whether they may be followed up.</p>
+      <summary style={{fontSize:12,fontWeight:500,cursor:"pointer",color:"#1C1C1E"}}>Follow-ups ({items.filter((item)=>!["completed","cancelled"].includes(item.status)).length})</summary>
+      <p style={{fontSize:10.5,color:"#8E8E93"}}>Plans and open topics live here. Long-term memory only records facts and experiences.</p>
       <div style={{display:"flex",gap:6}}>
         <input value={manual.title} onChange={(event)=>setManual({...manual,title:event.target.value})} placeholder="Title"
           style={{flex:1,minWidth:0,height:30,boxSizing:"border-box",border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,padding:"0 8px",fontSize:10.5}} />
@@ -125,7 +125,7 @@ export default function FollowUpSettings() {
           {KINDS.map((kind)=><option key={kind}>{kind}</option>)}
         </select>
       </div>
-      <textarea value={manual.content} onChange={(event)=>setManual({...manual,content:event.target.value})} placeholder="What remains unfinished?" rows={2}
+      <textarea value={manual.content} onChange={(event)=>setManual({...manual,content:event.target.value})} placeholder="What should be followed up?" rows={2}
         style={{width:"100%",boxSizing:"border-box",marginTop:6,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,padding:9,fontFamily:"inherit",fontSize:11}} />
       <input value={manual.triggers} onChange={(event)=>setManual({...manual,triggers:event.target.value})} placeholder="Related phrases: comma, 、, semicolon, or new line"
         style={{width:"100%",boxSizing:"border-box",height:30,marginTop:6,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,padding:"0 8px",fontSize:10.5}} />
