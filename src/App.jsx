@@ -486,7 +486,7 @@ function Bubble({ msg, onSuggestionResolve }) {
           </div>
         )}
         {msg.followUpSuggestion?.resolved === "confirmed" && (
-          <span style={{fontSize:9.5,color:"#34C759",marginTop:4}}>话题状态与长期记忆已更新</span>
+          <span style={{fontSize:9.5,color:"#34C759",marginTop:4}}>Follow-up 已更新</span>
         )}
         <span style={{fontSize:9.5,color:"#8E8E93",marginTop:3,padding:"0 3px",fontWeight:300,letterSpacing:"0.03em"}}>
           {msg.ts}
@@ -759,7 +759,7 @@ const aiText = data.reply ?? "……";
     if (confirmed) {
       const isCreate = suggestion.action === "create";
       await api(isCreate
-        ? "/follow-up-events/confirm-create"
+        ? "/follow-ups/confirm-create"
         : "/follow-ups/" + suggestion.followUpId + "/confirm-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
