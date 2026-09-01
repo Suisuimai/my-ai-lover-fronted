@@ -4,6 +4,8 @@ import CompanionSettings from "./CompanionSettings.jsx";
 import FollowUpSettings from "./FollowUpSettings.jsx";
 import MemorySettings from "./MemorySettings.jsx";
 import PromptDocumentSettings from "./PromptDocumentSettings.jsx";
+import TimelineSettings from "./TimelineSettings.jsx";
+import HandoffSettings from "./HandoffSettings.jsx";
 import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════
@@ -236,6 +238,8 @@ const meta = MODEL_META[model];
           <p style={{fontSize:10.5,fontWeight:300,color:"#C7C7CC",marginTop:5,paddingLeft:2}}>Optional legacy instructions. Core identity belongs in the companion profile below.</p>
 
           <PromptDocumentSettings />
+          <TimelineSettings />
+          <HandoffSettings />
           <CompanionSettings />
           <MemorySettings />
           <FollowUpSettings />
