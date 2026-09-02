@@ -6,6 +6,7 @@ import MemorySettings from "./MemorySettings.jsx";
 import PromptDocumentSettings from "./PromptDocumentSettings.jsx";
 import TimelineSettings from "./TimelineSettings.jsx";
 import HandoffSettings from "./HandoffSettings.jsx";
+import TimelineImportSettings from "./TimelineImportSettings.jsx";
 import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════
@@ -100,6 +101,7 @@ function SettingsModal({ open, onClose, settings, onSave, onSignOut }) {
   const [model, setModel]       = useState(settings.model);
   const [temperature, setTemperature] = useState(settings.temperature ?? 0.8);
   const [recentMessageLimit, setRecentMessageLimit] = useState(settings.recentMessageLimit ?? 12);
+  const [timelineModel, setTimelineModel] = useState(settings.timelineModel ?? "deepseek-v4-flash");
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared]   = useState(false);
   const [saved, setSaved]       = useState(false);
@@ -113,7 +115,7 @@ function SettingsModal({ open, onClose, settings, onSave, onSignOut }) {
   // 同步外部 settings
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the modal draft whenever it opens.
-    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setModel(settings.model); setTemperature(settings.temperature ?? 0.8); setRecentMessageLimit(settings.recentMessageLimit ?? 12); setSaved(false); setSaveError(""); }
+    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setModel(settings.model); setTimelineModel(settings.timelineModel ?? "deepseek-v4-flash"); setTemperature(settings.temperature ?? 0.8); setRecentMessageLimit(settings.recentMessageLimit ?? 12); setSaved(false); setSaveError(""); }
   }, [open, settings]);
 
   useEffect(() => {
@@ -142,7 +144,7 @@ function SettingsModal({ open, onClose, settings, onSave, onSignOut }) {
   const handleSave = async () => {
     try {
       setSaveError("");
-      await onSave({ systemPrompt, model, temperature: Number(temperature), recentMessageLimit: Number(recentMessageLimit) });
+      await onSave({ systemPrompt, model, timelineModel, temperature: Number(temperature), recentMessageLimit: Number(recentMessageLimit) });
       setSaved(true);
       setTimeout(() => { setSaved(false); onClose(); }, 900);
     } catch (error) { setSaveError(error.message); }
@@ -239,6 +241,7 @@ const meta = MODEL_META[model];
 
           <PromptDocumentSettings />
           <TimelineSettings />
+          <TimelineImportSettings />
           <HandoffSettings />
           <CompanionSettings />
           <MemorySettings />
@@ -254,6 +257,14 @@ const meta = MODEL_META[model];
               <input type="number" min="2" step="2" value={recentMessageLimit} onChange={(e)=>setRecentMessageLimit(e.target.value)} style={{width:"100%",height:38,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:12,padding:"0 12px",background:"rgba(0,0,0,0.02)",fontSize:13,outline:"none"}} />
             </div>
           </div>
+
+          <label style={{...S.label,marginTop:14}}>MEMORY PROCESSING MODEL</label>
+          <select value={timelineModel} onChange={(e)=>setTimelineModel(e.target.value)} style={{width:"100%",height:38,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:12,padding:"0 10px",background:"rgba(0,0,0,0.02)",fontSize:12}}>
+            <option value="deepseek-v4-flash">DeepSeek · 便宜记忆整理</option>
+            <option value="gpt-5-mini">OpenAI · 记忆整理</option>
+            <option value="claude-sonnet-4-20250514">Claude · 记忆整理</option>
+          </select>
+          <p style={{fontSize:10.5,color:"#8E8E93",marginTop:5}}>它只在你主动生成候选日记时工作，与上方的聊天模型分开。</p>
 
           <div style={S.divider} />
 
