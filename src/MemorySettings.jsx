@@ -101,8 +101,8 @@ export default function MemorySettings() {
 
   return (
     <details style={{marginTop:14,borderTop:"0.5px solid rgba(0,0,0,0.06)",paddingTop:14}}>
-      <summary style={{fontSize:12,fontWeight:500,cursor:"pointer",color:"#1C1C1E"}}>Long-term memories ({memories.length})</summary>
-      <p style={{fontSize:10.5,color:"#8E8E93"}}>These memories can cross conversation windows. Pause, edit, or delete anything that is wrong.</p>
+      <summary style={{fontSize:12,fontWeight:500,cursor:"pointer",color:"#1C1C1E"}}>旧版长期记忆 ({memories.length})</summary>
+      <p style={{fontSize:10.5,color:"#8E8E93"}}>旧记录仍可被聊天召回，但系统不再自动新增。它与新的“记忆与日记”测试流水线无关。</p>
       <div style={{display:"flex",gap:6}}>
         <select value={manual.category} onChange={(event)=>setManual({...manual,category:event.target.value})}
           style={{height:30,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:10,fontSize:10.5}}>
