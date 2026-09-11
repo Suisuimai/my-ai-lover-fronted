@@ -6,6 +6,7 @@ import MemorySettings from "./MemorySettings.jsx";
 import PromptDocumentSettings from "./PromptDocumentSettings.jsx";
 import HandoffSettings from "./HandoffSettings.jsx";
 import MemoryJournalSettings from "./MemoryJournalSettings.jsx";
+import ApiModelsPage from "./ApiModelsPage.jsx";
 import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════
@@ -95,38 +96,21 @@ function getNow() {
 // ══════════════════════════════════════════
 //  SettingsModal
 // ══════════════════════════════════════════
-function SettingsModal({ open, onClose, settings, onSave, onSignOut }) {
+function SettingsModal({ open, onClose, settings, onSave, onSignOut, onOpenApiModels }) {
   const [systemPrompt, setSystemPrompt] = useState(settings.systemPrompt ?? "");
-  const [model, setModel]       = useState(settings.model);
   const [temperature, setTemperature] = useState(settings.temperature ?? 0.8);
   const [recentMessageLimit, setRecentMessageLimit] = useState(settings.recentMessageLimit ?? 12);
-  const [timelineModel, setTimelineModel] = useState(settings.timelineModel ?? "deepseek-v4-flash");
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared]   = useState(false);
   const [saved, setSaved]       = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [credentialStatus, setCredentialStatus] = useState({});
-  const [credentialDrafts, setCredentialDrafts] = useState({});
-  const [credentialBusy, setCredentialBusy] = useState("");
-  const [credentialMessage, setCredentialMessage] = useState("");
   const overlayRef              = useRef(null);
 
   // 同步外部 settings
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the modal draft whenever it opens.
-    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setModel(settings.model); setTimelineModel(settings.timelineModel ?? "deepseek-v4-flash"); setTemperature(settings.temperature ?? 0.8); setRecentMessageLimit(settings.recentMessageLimit ?? 12); setSaved(false); setSaveError(""); }
+    if (open) { setSystemPrompt(settings.systemPrompt ?? ""); setTemperature(settings.temperature ?? 0.8); setRecentMessageLimit(settings.recentMessageLimit ?? 12); setSaved(false); setSaveError(""); }
   }, [open, settings]);
-
-  useEffect(() => {
-    if (!open) return;
-    let active = true;
-    api("/settings/credentials").then((data) => {
-      if (active) setCredentialStatus(data.credentials || {});
-    }).catch((error) => {
-      if (active) setCredentialMessage(error.message);
-    });
-    return () => { active = false; };
-  }, [open]);
 
   // ESC 关闭
   useEffect(() => {
@@ -143,23 +127,10 @@ function SettingsModal({ open, onClose, settings, onSave, onSignOut }) {
   const handleSave = async () => {
     try {
       setSaveError("");
-      await onSave({ systemPrompt, model, timelineModel, temperature: Number(temperature), recentMessageLimit: Number(recentMessageLimit) });
+      await onSave({ systemPrompt, temperature: Number(temperature), recentMessageLimit: Number(recentMessageLimit) });
       setSaved(true);
       setTimeout(() => { setSaved(false); onClose(); }, 900);
     } catch (error) { setSaveError(error.message); }
-  };
-
-  const saveCredential = async (provider) => {
-    const apiKey = credentialDrafts[provider]?.trim();
-    if (!apiKey) return setCredentialMessage("Paste an API key before saving.");
-    try {
-      setCredentialBusy(provider); setCredentialMessage("");
-      await api(`/settings/credentials/${provider}`, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ apiKey }) });
-      setCredentialDrafts((drafts) => ({ ...drafts, [provider]: "" }));
-      setCredentialStatus((status) => ({ ...status, [provider]: { configured:true } }));
-      setCredentialMessage(`${provider} key saved securely.`);
-    } catch (error) { setCredentialMessage(error.message); }
-    finally { setCredentialBusy(""); }
   };
 
   const handleClear = () => {
@@ -168,25 +139,6 @@ function SettingsModal({ open, onClose, settings, onSave, onSignOut }) {
     setTimeout(() => { setClearing(false); setCleared(true); }, 800);
     setTimeout(() => setCleared(false), 2600);
   };
-
-  const MODEL_META = {
-  "deepseek-v4-flash": {
-    icon: "ti-bolt",
-    tag: "日常推荐",
-    desc: "速度快、成本低，适合大多数聊天场景"
-  },
-  "deepseek-v4-pro": {
-    icon: "ti-brain",
-    tag: "深度模式",
-    desc: "更强推理能力，适合复杂分析与长对话"
-  },
-  "gpt-5-mini": { icon:"ti-sparkles", tag:"OpenAI", desc:"Fast GPT model" },
-  "gpt-5": { icon:"ti-sparkles", tag:"OpenAI", desc:"Stronger GPT model" },
-  "claude-sonnet-4-20250514": { icon:"ti-message-circle", tag:"Anthropic", desc:"Claude Sonnet" },
-  "claude-opus-4-20250514": { icon:"ti-message-circle", tag:"Anthropic", desc:"Claude Opus" }
-};
-
-const meta = MODEL_META[model];
 
   const S = {
     overlay: {
@@ -225,6 +177,12 @@ const meta = MODEL_META[model];
         {/* 内容 */}
         <div style={{padding:"20px 20px 0"}}>
 
+          <button type="button" onClick={onOpenApiModels} style={{width:"100%",border:"0.5px solid rgba(0,0,0,0.08)",borderRadius:15,padding:"13px 14px",background:"rgba(0,0,0,0.02)",display:"flex",alignItems:"center",gap:11,cursor:"pointer",textAlign:"left",marginBottom:18}}>
+            <span style={{width:34,height:34,borderRadius:12,background:"#1C1C1E",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}><i className="ti ti-plug-connected" /></span>
+            <span><strong style={{display:"block",fontSize:12.5,fontWeight:500,color:"#1C1C1E"}}>API 与模型</strong><small style={{display:"block",fontSize:10.5,color:"#8E8E93",marginTop:2}}>连接、模型与功能分配</small></span>
+            <i className="ti ti-chevron-right" style={{marginLeft:"auto",color:"#C7C7CC"}} />
+          </button>
+
           {/* API Key */}
           <label style={S.label}>ADDITIONAL INSTRUCTIONS</label>
           <div style={{display:"flex",alignItems:"center",gap:8,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 10px 0 14px",background:"rgba(0,0,0,0.02)"}}>
@@ -255,59 +213,6 @@ const meta = MODEL_META[model];
               <input type="number" min="2" step="2" value={recentMessageLimit} onChange={(e)=>setRecentMessageLimit(e.target.value)} style={{width:"100%",height:38,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:12,padding:"0 12px",background:"rgba(0,0,0,0.02)",fontSize:13,outline:"none"}} />
             </div>
           </div>
-
-          <label style={{...S.label,marginTop:14}}>MEMORY PROCESSING MODEL</label>
-          <select value={timelineModel} onChange={(e)=>setTimelineModel(e.target.value)} style={{width:"100%",height:38,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:12,padding:"0 10px",background:"rgba(0,0,0,0.02)",fontSize:12}}>
-            <option value="deepseek-v4-flash">DeepSeek · 便宜记忆整理</option>
-            <option value="gpt-5-mini">OpenAI · 记忆整理</option>
-            <option value="claude-sonnet-4-20250514">Claude · 记忆整理</option>
-          </select>
-          <p style={{fontSize:10.5,color:"#8E8E93",marginTop:5}}>它只在你主动生成候选日记时工作，与上方的聊天模型分开。</p>
-
-          <div style={S.divider} />
-
-          {/* 模型 */}
-          <label style={S.label}>DEFAULT MODEL</label>
-          <div style={{position:"relative"}}>
-            <select value={model} onChange={(e)=>setModel(e.target.value)}
-              style={{width:"100%",height:42,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 36px 0 14px",background:"rgba(0,0,0,0.02)",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:300,color:"#1C1C1E",appearance:"none",cursor:"pointer",outline:"none"}}>
-              <option value="deepseek-v4-flash">DeepSeek V4 Flash · 快速响应</option>
-<option value="deepseek-v4-pro">DeepSeek V4 Pro · 深度思考</option>
-              <option value="gpt-5-mini">GPT-5 mini</option>
-              <option value="gpt-5">GPT-5</option>
-              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-              <option value="claude-opus-4-20250514">Claude Opus 4</option>
-            </select>
-            <i className="ti ti-chevron-down" style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:"#8E8E93",fontSize:14,pointerEvents:"none"}} />
-          </div>
-          {meta && (
-            <div style={{marginTop:8,padding:"10px 12px",background:"rgba(0,0,0,0.02)",borderRadius:10,border:"0.5px solid rgba(0,0,0,0.05)",display:"flex",gap:8,alignItems:"flex-start"}}>
-              <i className={`ti ${meta.icon}`} style={{color:"#8E8E93",fontSize:14,marginTop:1}} />
-              <div>
-                <span style={{fontSize:11,fontWeight:400,color:"#3C3C3E"}}>{meta.tag}{" "}</span>
-                <span style={{fontSize:11,fontWeight:300,color:"#8E8E93"}}>{meta.desc}</span>
-              </div>
-            </div>
-          )}
-
-          <div style={S.divider} />
-
-          {/* 清除记忆 */}
-          <label style={S.label}>MODEL API KEYS</label>
-          <p style={{fontSize:10.5,fontWeight:300,color:"#8E8E93",lineHeight:1.45,margin:"-2px 0 10px"}}>Keys are encrypted before storage and are never shown again.</p>
-          {[['deepseek','DeepSeek'],['openai','OpenAI / GPT'],['anthropic','Anthropic / Claude']].map(([provider, label]) => (
-            <div key={provider} style={{marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-                <span style={{fontSize:12,color:"#3C3C3E"}}>{label}</span>
-                <span style={{fontSize:10,color:credentialStatus[provider]?.configured ? "#34C759" : "#8E8E93"}}>{credentialStatus[provider]?.configured ? "Configured" : "Not configured"}</span>
-              </div>
-              <div style={{display:"flex",gap:7}}>
-                <input type="password" autoComplete="new-password" value={credentialDrafts[provider] || ""} onChange={(e)=>setCredentialDrafts((drafts)=>({...drafts,[provider]:e.target.value}))} placeholder={credentialStatus[provider]?.configured ? "Paste a new key to replace" : "Paste API key"} style={{minWidth:0,flex:1,height:36,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:11,padding:"0 10px",background:"rgba(0,0,0,0.02)",fontSize:12,outline:"none"}} />
-                <button onClick={()=>saveCredential(provider)} disabled={credentialBusy===provider} style={{height:36,padding:"0 10px",border:"none",borderRadius:11,background:"#1C1C1E",color:"#fff",fontSize:11,cursor:"pointer"}}>{credentialBusy===provider ? "Saving" : "Save"}</button>
-              </div>
-            </div>
-          ))}
-          {credentialMessage && <p style={{fontSize:10.5,color:"#8E8E93",margin:"2px 0 0"}}>{credentialMessage}</p>}
 
           <div style={S.divider} />
 
@@ -514,7 +419,7 @@ function Bubble({ msg, onSuggestionResolve }) {
 // ══════════════════════════════════════════
 //  InputBar
 // ══════════════════════════════════════════
-function InputBar({ onSend, model, onModelChange }) {
+function InputBar({ onSend }) {
   const [text, setText] = useState("");
   const taRef = useRef(null);
 
@@ -564,15 +469,7 @@ function InputBar({ onSend, model, onModelChange }) {
           <button style={{width:32,height:32,borderRadius:"50%",border:"none",background:"rgba(0,0,0,0.05)",color:"#1C1C1E",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
             <i className="ti ti-plus" />
           </button>
-          <select value={model} onChange={(e)=>onModelChange(e.target.value)}
-            style={{height:26,border:"0.5px solid rgba(0,0,0,0.1)",borderRadius:14,padding:"0 20px 0 8px",background:"rgba(0,0,0,0.03)",fontFamily:"'DM Sans',sans-serif",fontSize:10,fontWeight:400,color:"#8E8E93",appearance:"none",cursor:"pointer",outline:"none",letterSpacing:"0.02em",flexShrink:0,backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,backgroundRepeat:"no-repeat",backgroundPosition:"right 5px center"}}>
-            <option value="deepseek-v4-flash">Flash</option>
-<option value="deepseek-v4-pro">Pro</option>
-            <option value="gpt-5-mini">GPT-5 mini</option>
-            <option value="gpt-5">GPT-5</option>
-            <option value="claude-sonnet-4-20250514">Claude Sonnet</option>
-            <option value="claude-opus-4-20250514">Claude Opus</option>
-          </select>
+          <span style={{height:26,borderRadius:14,padding:"0 9px",background:"rgba(0,0,0,0.03)",fontSize:10,color:"#8E8E93",display:"inline-flex",alignItems:"center",gap:5}}><i className="ti ti-route" /> 模型已分配</span>
           <div style={{flex:1}} />
           <button style={{width:32,height:32,borderRadius:"50%",border:"none",background:"rgba(0,0,0,0.05)",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
             <i className="ti ti-microphone" />
@@ -595,6 +492,7 @@ export default function App() {
   // ── UI 状态 ──────────────────────────────
   const [sidebarOpen,  setSidebarOpen]  = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [apiModelsOpen, setApiModelsOpen] = useState(false);
 
   // ── 数据状态 ─────────────────────────────
   const [conversations, setConversations] = useState([]);
@@ -905,11 +803,6 @@ const aiText = data.reply ?? "……";
         {/* 悬浮输入栏 */}
         <InputBar
           onSend={handleSend}
-          model={settings.model}
-          onModelChange={(m) => {
-            window.localStorage.setItem("my-ai-lover:model", m);
-            setSettings((s) => ({ ...s, model: m }));
-          }}
         />
       </main>
 
@@ -920,7 +813,10 @@ const aiText = data.reply ?? "……";
         settings={settings}
         onSave={handleSaveSettings}
         onSignOut={handleSignOut}
+        onOpenApiModels={() => { setSettingsOpen(false); setApiModelsOpen(true); }}
       />
+
+      <ApiModelsPage open={apiModelsOpen} onClose={() => setApiModelsOpen(false)} />
 
       <style>{`
         @keyframes rise { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
