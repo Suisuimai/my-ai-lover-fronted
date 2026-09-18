@@ -8,6 +8,7 @@ import HandoffSettings from "./HandoffSettings.jsx";
 import MemoryJournalSettings from "./MemoryJournalSettings.jsx";
 import ApiModelsPage from "./ApiModelsPage.jsx";
 import PromptPreviewPage from "./PromptPreviewPage.jsx";
+import HandoffComposer from "./HandoffComposer.jsx";
 import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════
@@ -501,6 +502,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiModelsOpen, setApiModelsOpen] = useState(false);
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => formatShanghaiTime(new Date()));
 
   // ── 数据状态 ─────────────────────────────
   const [conversations, setConversations] = useState([]);
@@ -512,6 +515,8 @@ export default function App() {
 });
 
   const msgEndRef = useRef(null);
+
+  useEffect(()=>{const timer=window.setInterval(()=>setCurrentTime(formatShanghaiTime(new Date())),30000);return()=>window.clearInterval(timer)},[]);
 
   // ── 派生：当前对话 ────────────────────────
   const activeConv = conversations.find((c) => c.id === activeId);
@@ -751,9 +756,7 @@ const aiText = data.reply ?? "……";
           </button>
 
           {/* 当前对话标题 */}
-          <span style={{fontSize:13,fontWeight:300,color:"#3C3C3E",letterSpacing:"0.01em",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",flex:1}}>
-            {activeConv?.title ?? "新对话"}
-          </span>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:300,color:"#3C3C3E",letterSpacing:"0.01em",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{activeConv?.title ?? "新对话"}</div><div style={{fontSize:9,color:"#A1A1A6",marginTop:1}}>{currentTime}</div></div>
 
           {/* 右侧按钮 */}
           <div style={{display:"flex",gap:4,flexShrink:0}}>
@@ -774,6 +777,11 @@ const aiText = data.reply ?? "……";
               title="Delete conversation"
               style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:activeIsNew?"default":"pointer",opacity:activeIsNew?0.35:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
               <i className="ti ti-trash" />
+            </button>
+            <button onClick={()=>setHandoffOpen(true)} disabled={activeIsNew || !activeConv}
+              title="结束窗口并生成交接"
+              style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:activeIsNew?"default":"pointer",opacity:activeIsNew?0.35:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
+              <i className="ti ti-door-exit" />
             </button>
             <button onClick={() => setSettingsOpen(true)}
               style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}
@@ -827,6 +835,7 @@ const aiText = data.reply ?? "……";
 
       <ApiModelsPage open={apiModelsOpen} onClose={() => setApiModelsOpen(false)} />
       <PromptPreviewPage open={promptPreviewOpen} onClose={() => setPromptPreviewOpen(false)} sessionId={activeIsNew ? null : activeId} />
+      <HandoffComposer open={handoffOpen} onClose={()=>setHandoffOpen(false)} sessionId={activeIsNew?null:activeId} />
 
       <style>{`
         @keyframes rise { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
@@ -836,3 +845,5 @@ const aiText = data.reply ?? "……";
     </div>
   );
 }
+
+function formatShanghaiTime(date){return new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(date).replaceAll("/","-")+" CST"}
