@@ -7,6 +7,7 @@ import PromptDocumentSettings from "./PromptDocumentSettings.jsx";
 import HandoffSettings from "./HandoffSettings.jsx";
 import MemoryJournalSettings from "./MemoryJournalSettings.jsx";
 import ApiModelsPage from "./ApiModelsPage.jsx";
+import PromptPreviewPage from "./PromptPreviewPage.jsx";
 import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════
@@ -96,7 +97,7 @@ function getNow() {
 // ══════════════════════════════════════════
 //  SettingsModal
 // ══════════════════════════════════════════
-function SettingsModal({ open, onClose, settings, onSave, onSignOut, onOpenApiModels }) {
+function SettingsModal({ open, onClose, settings, onSave, onSignOut, onOpenApiModels, onOpenPromptPreview }) {
   const [systemPrompt, setSystemPrompt] = useState(settings.systemPrompt ?? "");
   const [temperature, setTemperature] = useState(settings.temperature ?? 0.8);
   const [recentMessageLimit, setRecentMessageLimit] = useState(settings.recentMessageLimit ?? 12);
@@ -180,6 +181,12 @@ function SettingsModal({ open, onClose, settings, onSave, onSignOut, onOpenApiMo
           <button type="button" onClick={onOpenApiModels} style={{width:"100%",border:"0.5px solid rgba(0,0,0,0.08)",borderRadius:15,padding:"13px 14px",background:"rgba(0,0,0,0.02)",display:"flex",alignItems:"center",gap:11,cursor:"pointer",textAlign:"left",marginBottom:18}}>
             <span style={{width:34,height:34,borderRadius:12,background:"#1C1C1E",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}><i className="ti ti-plug-connected" /></span>
             <span><strong style={{display:"block",fontSize:12.5,fontWeight:500,color:"#1C1C1E"}}>API 与模型</strong><small style={{display:"block",fontSize:10.5,color:"#8E8E93",marginTop:2}}>连接、模型与功能分配</small></span>
+            <i className="ti ti-chevron-right" style={{marginLeft:"auto",color:"#C7C7CC"}} />
+          </button>
+
+          <button type="button" onClick={onOpenPromptPreview} style={{width:"100%",border:"0.5px solid rgba(0,0,0,0.08)",borderRadius:15,padding:"13px 14px",background:"rgba(0,0,0,0.02)",display:"flex",alignItems:"center",gap:11,cursor:"pointer",textAlign:"left",marginBottom:18}}>
+            <span style={{width:34,height:34,borderRadius:12,background:"#EEECE7",color:"#1C1C1E",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}><i className="ti ti-layers-subtract" /></span>
+            <span><strong style={{display:"block",fontSize:12.5,fontWeight:500,color:"#1C1C1E"}}>Prompt 预览</strong><small style={{display:"block",fontSize:10.5,color:"#8E8E93",marginTop:2}}>查看每一层内容与 Token 体积</small></span>
             <i className="ti ti-chevron-right" style={{marginLeft:"auto",color:"#C7C7CC"}} />
           </button>
 
@@ -493,6 +500,7 @@ export default function App() {
   const [sidebarOpen,  setSidebarOpen]  = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiModelsOpen, setApiModelsOpen] = useState(false);
+  const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
 
   // ── 数据状态 ─────────────────────────────
   const [conversations, setConversations] = useState([]);
@@ -814,9 +822,11 @@ const aiText = data.reply ?? "……";
         onSave={handleSaveSettings}
         onSignOut={handleSignOut}
         onOpenApiModels={() => { setSettingsOpen(false); setApiModelsOpen(true); }}
+        onOpenPromptPreview={() => { setSettingsOpen(false); setPromptPreviewOpen(true); }}
       />
 
       <ApiModelsPage open={apiModelsOpen} onClose={() => setApiModelsOpen(false)} />
+      <PromptPreviewPage open={promptPreviewOpen} onClose={() => setPromptPreviewOpen(false)} sessionId={activeIsNew ? null : activeId} />
 
       <style>{`
         @keyframes rise { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
