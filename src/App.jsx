@@ -365,7 +365,7 @@ const grouped = {
 // ══════════════════════════════════════════
 //  Bubble
 // ══════════════════════════════════════════
-function Bubble({ msg, onSuggestionResolve }) {
+function Bubble({ msg, onSuggestionResolve, onRetry }) {
   const isUser = msg.role === "user";
   return (
     <div className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}
@@ -416,6 +416,15 @@ function Bubble({ msg, onSuggestionResolve }) {
         {msg.followUpSuggestion?.resolved === "confirmed" && (
           <span style={{fontSize:9.5,color:"#34C759",marginTop:4}}>Follow-up 已更新</span>
         )}
+        {isUser && msg.deliveryStatus === "sending" && (
+          <span style={{fontSize:9.5,color:"#8E8E93",marginTop:4}}>发送中…</span>
+        )}
+        {isUser && msg.deliveryStatus === "failed" && (
+          <div style={{display:"flex",alignItems:"center",gap:7,marginTop:5,fontSize:10,color:"#C0392B"}}>
+            <span>发送失败，内容已保留</span>
+            <button type="button" onClick={()=>onRetry(msg)} style={{border:0,borderRadius:9,padding:"4px 8px",background:"rgba(192,57,43,.09)",color:"#C0392B",fontSize:10,cursor:"pointer"}}>重试</button>
+          </div>
+        )}
         <span style={{fontSize:9.5,color:"#8E8E93",marginTop:3,padding:"0 3px",fontWeight:300,letterSpacing:"0.03em"}}>
           {msg.ts}
         </span>
@@ -429,6 +438,7 @@ function Bubble({ msg, onSuggestionResolve }) {
 // ══════════════════════════════════════════
 function InputBar({ onSend }) {
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
   const taRef = useRef(null);
 
   const resize = () => {
@@ -438,11 +448,16 @@ function InputBar({ onSend }) {
     el.style.height = Math.min(el.scrollHeight, 90) + "px";
   };
 
-  const handleSend = () => {
-    if (!text.trim()) return;
-    onSend(text.trim());
-    setText("");
-    if (taRef.current) taRef.current.style.height = "auto";
+  const handleSend = async () => {
+    if (!text.trim() || sending) return;
+    const pendingText = text.trim();
+    setSending(true);
+    const succeeded = await onSend(pendingText);
+    setSending(false);
+    if (succeeded) {
+      setText("");
+      if (taRef.current) taRef.current.style.height = "auto";
+    }
   };
 
   return (
@@ -482,8 +497,8 @@ function InputBar({ onSend }) {
           <button style={{width:32,height:32,borderRadius:"50%",border:"none",background:"rgba(0,0,0,0.05)",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
             <i className="ti ti-microphone" />
           </button>
-          <button onClick={handleSend}
-            style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#1C1C1E",color:"#F7F6F3",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,transition:"background .15s"}}>
+          <button onClick={handleSend} disabled={sending}
+            style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#1C1C1E",color:"#F7F6F3",cursor:sending?"default":"pointer",opacity:sending?.5:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,transition:"background .15s"}}>
             <i className="ti ti-arrow-up" />
           </button>
         </div>
@@ -621,13 +636,16 @@ useEffect(() => {
     });
   }, [activeConv, activeIsNew]);
 
-  const handleSend = useCallback(async (text) => {
-    const userMsg = { id: Date.now(), role: "user", text, ts: getNow() };
+  const handleSend = useCallback(async (text, retryRequestId = null) => {
+    const clientRequestId = retryRequestId || crypto.randomUUID();
+    const userMsg = { id: clientRequestId, clientRequestId, role: "user", text, ts: getNow(), deliveryStatus: "sending" };
 
     // 把用户消息追加进当前对话，同时更新标题（取第一条 user 消息前 12 字）
     setConversations((prev) =>
       prev.map((c) => {
         if (c.id !== activeId) return c;
+        const existing = c.messages.some((m) => m.clientRequestId === clientRequestId);
+        if (existing) return { ...c, messages: c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sending" } : m) };
         const isFirstUserMsg = !c.messages.some((m) => m.role === "user");
         return {
           ...c,
@@ -640,17 +658,21 @@ useEffect(() => {
     setTyping(true);
 
     try {
-      const data = await api("/chat", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    model: settings.model,
-    message: text,
-    sessionId: activeIsNew ? undefined : activeId
-  })
-});
+      let data = await api("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: settings.model,
+          message: text,
+          sessionId: activeIsNew ? undefined : activeId,
+          clientRequestId,
+        }),
+      });
+      for (let attempt = 0; data.requestStatus === "pending" && attempt < 45; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        data = await api(`/chat-requests/${clientRequestId}`);
+      }
+      if (data.requestStatus !== "succeeded" || !data.reply) throw new Error("回复仍未完成，请稍后重试");
 
 const aiText = data.reply ?? "……";
       setConversations((prev) =>
@@ -662,24 +684,34 @@ const aiText = data.reply ?? "……";
                 id: data.sessionId ?? c.id,
                 isNew: false,
                 title: data.title ?? c.title,
-                messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: aiText, ts: getNow(), followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }],
+                messages: [
+                  ...c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sent" } : m),
+                  ...(!c.messages.some((m) => m.id === data.messageId) ? [{ id: data.messageId || Date.now() + 1, role: "ai", text: aiText, ts: getNow(), followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
+                ],
               }
         )
       );
       if (activeIsNew && data.sessionId) setActiveId(data.sessionId);
+      return true;
     } catch (error) {
       console.error("Chat failed:", error);
       setConversations((prev) =>
         prev.map((c) =>
           c.id !== activeId
             ? c
-            : { ...c, messages: [...c.messages, { id: Date.now() + 1, role: "ai", text: `Request failed: ${error.message}`, ts: getNow() }] }
+            : { ...c, messages: c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "failed", error: error.message } : m) }
         )
       );
+      return false;
     } finally {
       setTyping(false);
     }
   }, [activeId, activeIsNew, settings.model]);
+
+  const handleRetryMessage = useCallback((message) => {
+    if (!message?.clientRequestId || !message?.text) return;
+    handleSend(message.text, message.clientRequestId);
+  }, [handleSend]);
 
   const handleSuggestionResolve = useCallback(async (messageId, suggestion, confirmed) => {
     if (confirmed) {
@@ -800,7 +832,7 @@ const aiText = data.reply ?? "……";
             <div style={{flex:1,height:"0.5px",background:"rgba(0,0,0,0.06)"}} />
           </div>
 
-          {messages.map((msg) => <Bubble key={msg.id} msg={msg} onSuggestionResolve={handleSuggestionResolve} />)}
+          {messages.map((msg) => <Bubble key={msg.id} msg={msg} onSuggestionResolve={handleSuggestionResolve} onRetry={handleRetryMessage} />)}
 
           {/* 打字动画 */}
           {typing && (
