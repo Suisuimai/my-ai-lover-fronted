@@ -543,6 +543,7 @@ export default function App() {
   const [conversations, setConversations] = useState([]);
   const [activeId,      setActiveId]      = useState(1);               // 当前对话 id
   const [typing,        setTyping]        = useState(false);
+  const [composerClearToken, setComposerClearToken] = useState(0);
   const activeRequestRef = useRef(null);
   const [settings, setSettings] = useState({
   systemPrompt: "",
@@ -753,9 +754,10 @@ useEffect(() => {
     }
   }, [activeId, activeIsNew, settings.model]);
 
-  const handleRetryMessage = useCallback((message) => {
+  const handleRetryMessage = useCallback(async (message) => {
     if (!message?.clientRequestId || !message?.text) return;
-    handleSend(message.text, message.clientRequestId);
+    const succeeded = await handleSend(message.text, message.clientRequestId);
+    if (succeeded) setComposerClearToken((value) => value + 1);
   }, [handleSend]);
 
   const handleStopGeneration = useCallback(() => {
@@ -918,6 +920,7 @@ useEffect(() => {
 
         {/* 悬浮输入栏 */}
         <InputBar
+          key={composerClearToken}
           onSend={handleSend}
           generating={typing || Boolean(activeRequestRef.current)}
           onStop={handleStopGeneration}
