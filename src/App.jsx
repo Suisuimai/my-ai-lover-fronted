@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { api } from "./api.js";
+import { api, streamApi } from "./api.js";
 import CompanionSettings from "./CompanionSettings.jsx";
 import FollowUpSettings from "./FollowUpSettings.jsx";
 import MemorySettings from "./MemorySettings.jsx";
@@ -365,7 +365,7 @@ const grouped = {
 // ══════════════════════════════════════════
 //  Bubble
 // ══════════════════════════════════════════
-function Bubble({ msg, onSuggestionResolve, onRetry }) {
+function Bubble({ msg, onSuggestionResolve, onRetry, onRegenerate, onEdit, canRegenerate, disabled }) {
   const isUser = msg.role === "user";
   return (
     <div className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}
@@ -425,6 +425,24 @@ function Bubble({ msg, onSuggestionResolve, onRetry }) {
             <button type="button" onClick={()=>onRetry(msg)} style={{border:0,borderRadius:9,padding:"4px 8px",background:"rgba(192,57,43,.09)",color:"#C0392B",fontSize:10,cursor:"pointer"}}>重试</button>
           </div>
         )}
+        {msg.deliveryStatus !== "sending" && (
+          <div style={{display:"flex",gap:4,marginTop:4,opacity:.72}}>
+            {isUser && (
+              <button type="button" disabled={disabled} onClick={()=>onEdit(msg)} title="编辑并重发"
+                style={{border:0,background:"transparent",padding:"2px 4px",color:"#8E8E93",cursor:disabled?"default":"pointer",fontSize:13}}>
+                <i className="ti ti-pencil" />
+              </button>
+            )}
+            {!isUser && canRegenerate && (
+              <button type="button" disabled={disabled} onClick={()=>onRegenerate(msg)} title="重新生成"
+                style={{border:0,background:"transparent",padding:"2px 4px",color:"#8E8E93",cursor:disabled?"default":"pointer",fontSize:13}}>
+                <i className="ti ti-refresh" />
+              </button>
+            )}
+            {msg.isAlternative && <span style={{fontSize:9.5,color:"#8E8E93",padding:"2px 3px"}}>上一个版本</span>}
+            {msg.wasStopped && <span style={{fontSize:9.5,color:"#8E8E93",padding:"2px 3px"}}>已停止</span>}
+          </div>
+        )}
         <span style={{fontSize:9.5,color:"#8E8E93",marginTop:3,padding:"0 3px",fontWeight:300,letterSpacing:"0.03em"}}>
           {msg.ts}
         </span>
@@ -436,7 +454,7 @@ function Bubble({ msg, onSuggestionResolve, onRetry }) {
 // ══════════════════════════════════════════
 //  InputBar
 // ══════════════════════════════════════════
-function InputBar({ onSend }) {
+function InputBar({ onSend, generating, onStop }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const taRef = useRef(null);
@@ -449,7 +467,7 @@ function InputBar({ onSend }) {
   };
 
   const handleSend = async () => {
-    if (!text.trim() || sending) return;
+    if (!text.trim() || sending || generating) return;
     const pendingText = text.trim();
     setSending(true);
     const succeeded = await onSend(pendingText);
@@ -497,9 +515,10 @@ function InputBar({ onSend }) {
           <button style={{width:32,height:32,borderRadius:"50%",border:"none",background:"rgba(0,0,0,0.05)",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
             <i className="ti ti-microphone" />
           </button>
-          <button onClick={handleSend} disabled={sending}
-            style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#1C1C1E",color:"#F7F6F3",cursor:sending?"default":"pointer",opacity:sending?.5:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,transition:"background .15s"}}>
-            <i className="ti ti-arrow-up" />
+          <button onClick={generating ? onStop : handleSend} disabled={sending && !generating}
+            title={generating ? "停止生成" : "发送"}
+            style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#1C1C1E",color:"#F7F6F3",cursor:"pointer",opacity:(sending&&!generating)?.5:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0,transition:"background .15s"}}>
+            <i className={generating ? "ti ti-player-stop-filled" : "ti ti-arrow-up"} />
           </button>
         </div>
       </div>
@@ -524,6 +543,7 @@ export default function App() {
   const [conversations, setConversations] = useState([]);
   const [activeId,      setActiveId]      = useState(1);               // 当前对话 id
   const [typing,        setTyping]        = useState(false);
+  const activeRequestRef = useRef(null);
   const [settings, setSettings] = useState({
   systemPrompt: "",
   model: "deepseek-v4-flash",
@@ -560,6 +580,7 @@ const mapped = await Promise.all(data.map(async (session) => {
       id: message.id,
       role: message.role === "assistant" ? "ai" : message.role,
       text: message.content,
+      isAlternative: message.context_status === "alternative",
       ts: new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     })),
   };
@@ -636,7 +657,8 @@ useEffect(() => {
     });
   }, [activeConv, activeIsNew]);
 
-  const handleSend = useCallback(async (text, retryRequestId = null) => {
+  const handleSend = useCallback(async (text, retryRequestId = null, operation = "send", targetMessageId = null) => {
+    if (activeRequestRef.current) return false;
     const clientRequestId = retryRequestId || crypto.randomUUID();
     const userMsg = { id: clientRequestId, clientRequestId, role: "user", text, ts: getNow(), deliveryStatus: "sending" };
 
@@ -644,6 +666,17 @@ useEffect(() => {
     setConversations((prev) =>
       prev.map((c) => {
         if (c.id !== activeId) return c;
+        if (operation === "edit") {
+          const targetIndex = c.messages.findIndex((m) => m.id === targetMessageId);
+          if (targetIndex < 0) return c;
+          return { ...c, messages: [
+            ...c.messages.slice(0, targetIndex),
+            { ...c.messages[targetIndex], text, deliveryStatus: "sending", clientRequestId },
+          ] };
+        }
+        if (operation === "regenerate") {
+          return { ...c, messages: c.messages.map((m) => m.id === targetMessageId ? { ...m, isAlternative: true } : m) };
+        }
         const existing = c.messages.some((m) => m.clientRequestId === clientRequestId);
         if (existing) return { ...c, messages: c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sending" } : m) };
         const isFirstUserMsg = !c.messages.some((m) => m.role === "user");
@@ -656,9 +689,12 @@ useEffect(() => {
     );
 
     setTyping(true);
+    activeRequestRef.current = { id: clientRequestId };
 
     try {
-      let data = await api("/chat", {
+      const streamedId = `stream-${clientRequestId}`;
+      let streamedText = "";
+      const result = await streamApi("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -666,15 +702,22 @@ useEffect(() => {
           message: text,
           sessionId: activeIsNew ? undefined : activeId,
           clientRequestId,
+          operation,
+          targetMessageId,
         }),
+      }, (event, payload) => {
+        if (event !== "delta") return;
+        streamedText += payload.delta || "";
+        setConversations((prev) => prev.map((c) => c.id !== activeId ? c : {
+          ...c,
+          messages: c.messages.some((m) => m.id === streamedId)
+            ? c.messages.map((m) => m.id === streamedId ? { ...m, text: streamedText } : m)
+            : [...c.messages, { id: streamedId, role: "ai", text: streamedText, ts: getNow(), deliveryStatus: "streaming" }],
+        }));
       });
-      for (let attempt = 0; data.requestStatus === "pending" && attempt < 45; attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
-        data = await api(`/chat-requests/${clientRequestId}`);
-      }
-      if (data.requestStatus !== "succeeded" || !data.reply) throw new Error("回复仍未完成，请稍后重试");
-
-const aiText = data.reply ?? "……";
+      if (!result || result.event === "error") throw new Error(result?.data?.error || "回复仍未完成，请稍后重试");
+      const data = result.data;
+      const aiText = data.reply ?? streamedText ?? "……";
       setConversations((prev) =>
         prev.map((c) =>
           c.id !== activeId
@@ -685,8 +728,9 @@ const aiText = data.reply ?? "……";
                 isNew: false,
                 title: data.title ?? c.title,
                 messages: [
-                  ...c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sent" } : m),
-                  ...(!c.messages.some((m) => m.id === data.messageId) ? [{ id: data.messageId || Date.now() + 1, role: "ai", text: aiText, ts: getNow(), followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
+                  ...c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sent" } : m)
+                    .filter((m) => m.id !== streamedId),
+                  ...(aiText ? [{ id: data.messageId || streamedId, role: "ai", text: aiText, ts: getNow(), wasStopped: result.event === "cancelled", followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
                 ],
               }
         )
@@ -705,6 +749,7 @@ const aiText = data.reply ?? "……";
       return false;
     } finally {
       setTyping(false);
+      activeRequestRef.current = null;
     }
   }, [activeId, activeIsNew, settings.model]);
 
@@ -712,6 +757,27 @@ const aiText = data.reply ?? "……";
     if (!message?.clientRequestId || !message?.text) return;
     handleSend(message.text, message.clientRequestId);
   }, [handleSend]);
+
+  const handleStopGeneration = useCallback(() => {
+    const requestId = activeRequestRef.current?.id;
+    if (!requestId) return;
+    api(`/chat-requests/${requestId}/cancel`, { method: "POST" }).catch((error) => console.error("Stop generation failed:", error));
+  }, []);
+
+  const handleRegenerate = useCallback((message) => {
+    if (!activeConv || typing) return;
+    const index = activeConv.messages.findIndex((item) => item.id === message.id);
+    const source = [...activeConv.messages.slice(0, index)].reverse().find((item) => item.role === "user");
+    if (!source) return;
+    handleSend(source.text, null, "regenerate", message.id);
+  }, [activeConv, typing, handleSend]);
+
+  const handleEditAndResend = useCallback((message) => {
+    if (typing) return;
+    const edited = window.prompt("编辑这条消息并重新发送", message.text);
+    if (!edited?.trim() || edited.trim() === message.text) return;
+    handleSend(edited.trim(), null, "edit", message.id);
+  }, [typing, handleSend]);
 
   const handleSuggestionResolve = useCallback(async (messageId, suggestion, confirmed) => {
     if (confirmed) {
@@ -832,10 +898,12 @@ const aiText = data.reply ?? "……";
             <div style={{flex:1,height:"0.5px",background:"rgba(0,0,0,0.06)"}} />
           </div>
 
-          {messages.map((msg) => <Bubble key={msg.id} msg={msg} onSuggestionResolve={handleSuggestionResolve} onRetry={handleRetryMessage} />)}
+          {messages.map((msg, index) => <Bubble key={msg.id} msg={msg} onSuggestionResolve={handleSuggestionResolve} onRetry={handleRetryMessage}
+            onRegenerate={handleRegenerate} onEdit={handleEditAndResend} disabled={typing}
+            canRegenerate={msg.role === "ai" && index === messages.length - 1 && !msg.id?.toString().startsWith("stream-")} />)}
 
           {/* 打字动画 */}
-          {typing && (
+          {typing && !messages.some((message) => message.deliveryStatus === "streaming") && (
             <div style={{display:"flex",gap:8,animation:"rise .24s both"}}>
               <div style={{width:24,height:24,borderRadius:"50%",background:"#1C1C1E",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2,fontFamily:"'Cormorant Garamond',serif",fontSize:10,color:"#F7F6F3"}}>C</div>
               <div style={{padding:"12px 14px",background:"#fff",borderRadius:"3px 16px 16px 16px",border:"0.5px solid rgba(0,0,0,0.06)",boxShadow:"0 2px 10px rgba(0,0,0,0.06)",display:"flex",gap:4,alignItems:"center"}}>
@@ -851,6 +919,8 @@ const aiText = data.reply ?? "……";
         {/* 悬浮输入栏 */}
         <InputBar
           onSend={handleSend}
+          generating={typing || Boolean(activeRequestRef.current)}
+          onStop={handleStopGeneration}
         />
       </main>
 
