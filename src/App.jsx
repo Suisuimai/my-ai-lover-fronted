@@ -95,6 +95,36 @@ function getNow() {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+function groupReplyVariants(messages) {
+  const byId = new Map(messages.map((message) => [message.id, message]));
+  const rootIdOf = (message) => {
+    let current = message;
+    const seen = new Set();
+    while (current?.replacesMessageId && byId.has(current.replacesMessageId) && !seen.has(current.id)) {
+      seen.add(current.id);
+      current = byId.get(current.replacesMessageId);
+    }
+    return current?.id;
+  };
+  const groups = new Map();
+  messages.filter((message) => message.role === "ai").forEach((message) => {
+    const rootId = rootIdOf(message);
+    if (!groups.has(rootId)) groups.set(rootId, []);
+    groups.get(rootId).push(message);
+  });
+  const emitted = new Set();
+  return messages.flatMap((message) => {
+    if (message.role !== "ai") return [message];
+    const rootId = rootIdOf(message);
+    const variants = groups.get(rootId) || [message];
+    if (emitted.has(rootId)) return [];
+    emitted.add(rootId);
+    if (variants.length === 1) return [message];
+    const selected = variants.find((variant) => !variant.isAlternative) || variants.at(-1);
+    return [{ ...selected, variants, variantIndex: variants.findIndex((variant) => variant.id === selected.id), variantRootId: rootId }];
+  });
+}
+
 // ══════════════════════════════════════════
 //  SettingsModal
 // ══════════════════════════════════════════
@@ -365,7 +395,7 @@ const grouped = {
 // ══════════════════════════════════════════
 //  Bubble
 // ══════════════════════════════════════════
-function Bubble({ msg, onSuggestionResolve, onRetry, onRegenerate, onEdit, canRegenerate, disabled }) {
+function Bubble({ msg, onSuggestionResolve, onRetry, onRegenerate, onEdit, onVariantSelect, canRegenerate, canSwitchVariant, disabled }) {
   const isUser = msg.role === "user";
   return (
     <div className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}
@@ -439,7 +469,17 @@ function Bubble({ msg, onSuggestionResolve, onRetry, onRegenerate, onEdit, canRe
                 <i className="ti ti-refresh" />
               </button>
             )}
-            {msg.isAlternative && <span style={{fontSize:9.5,color:"#8E8E93",padding:"2px 3px"}}>上一个版本</span>}
+            {!isUser && msg.variants?.length > 1 && (
+              <div style={{display:"inline-flex",alignItems:"center",gap:2,color:"#8E8E93",fontSize:10}}>
+                <button type="button" disabled={disabled || !canSwitchVariant || msg.variantIndex <= 0}
+                  onClick={()=>onVariantSelect(msg, msg.variantIndex - 1)} aria-label="上一个回答版本"
+                  style={{border:0,background:"transparent",color:"inherit",padding:"1px 3px",cursor:"pointer",opacity:(disabled||!canSwitchVariant||msg.variantIndex<=0)?.3:1}}><i className="ti ti-chevron-left" /></button>
+                <span>{msg.variantIndex + 1} / {msg.variants.length}</span>
+                <button type="button" disabled={disabled || !canSwitchVariant || msg.variantIndex >= msg.variants.length - 1}
+                  onClick={()=>onVariantSelect(msg, msg.variantIndex + 1)} aria-label="下一个回答版本"
+                  style={{border:0,background:"transparent",color:"inherit",padding:"1px 3px",cursor:"pointer",opacity:(disabled||!canSwitchVariant||msg.variantIndex>=msg.variants.length-1)?.3:1}}><i className="ti ti-chevron-right" /></button>
+              </div>
+            )}
             {msg.wasStopped && <span style={{fontSize:9.5,color:"#8E8E93",padding:"2px 3px"}}>已停止</span>}
           </div>
         )}
@@ -557,6 +597,7 @@ export default function App() {
   // ── 派生：当前对话 ────────────────────────
   const activeConv = conversations.find((c) => c.id === activeId);
 const messages = useMemo(() => activeConv?.messages ?? [], [activeConv]);
+  const displayMessages = useMemo(() => groupReplyVariants(messages), [messages]);
   const activeIsNew = activeConv?.isNew === true;
 
   // 滚动到底部
@@ -582,6 +623,7 @@ const mapped = await Promise.all(data.map(async (session) => {
       role: message.role === "assistant" ? "ai" : message.role,
       text: message.content,
       isAlternative: message.context_status === "alternative",
+      replacesMessageId: message.replaces_message_id || null,
       ts: new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     })),
   };
@@ -628,7 +670,7 @@ useEffect(() => {
       title: "新对话",
       isNew: true,
       time: "今天",
-      messages: [{ id: 1, role: "ai", text: "你好呀，想聊些什么？", ts: getNow() }],
+      messages: [],
     };
     setConversations((prev) => [newConv, ...prev]);
     setActiveId(newId);
@@ -691,9 +733,9 @@ useEffect(() => {
 
     setTyping(true);
     activeRequestRef.current = { id: clientRequestId };
+    const streamedId = `stream-${clientRequestId}`;
 
     try {
-      const streamedId = `stream-${clientRequestId}`;
       let streamedText = "";
       const result = await streamApi("/chat", {
         method: "POST",
@@ -731,7 +773,7 @@ useEffect(() => {
                 messages: [
                   ...c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sent" } : m)
                     .filter((m) => m.id !== streamedId),
-                  ...(aiText ? [{ id: data.messageId || streamedId, role: "ai", text: aiText, ts: getNow(), wasStopped: result.event === "cancelled", followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
+                  ...(aiText ? [{ id: data.messageId || streamedId, role: "ai", text: aiText, ts: getNow(), replacesMessageId: operation === "regenerate" ? targetMessageId : null, wasStopped: result.event === "cancelled", followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
                 ],
               }
         )
@@ -744,7 +786,11 @@ useEffect(() => {
         prev.map((c) =>
           c.id !== activeId
             ? c
-            : { ...c, messages: c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "failed", error: error.message } : m) }
+            : { ...c, messages: c.messages
+              .filter((m) => m.id !== streamedId)
+              .map((m) => m.id === targetMessageId && operation === "regenerate"
+                ? { ...m, isAlternative: false }
+                : (m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "failed", error: error.message } : m)) }
         )
       );
       return false;
@@ -780,6 +826,23 @@ useEffect(() => {
     if (!edited?.trim() || edited.trim() === message.text) return;
     handleSend(edited.trim(), null, "edit", message.id);
   }, [typing, handleSend]);
+
+  const handleVariantSelect = useCallback(async (message, nextIndex) => {
+    const target = message.variants?.[nextIndex];
+    if (!target || typing) return;
+    try {
+      const data = await api(`/messages/${target.id}/select-variant`, { method: "POST" });
+      const variantIds = new Set(data.variantIds || []);
+      setConversations((current) => current.map((conversation) => conversation.id !== activeId ? conversation : ({
+        ...conversation,
+        messages: conversation.messages.map((item) => variantIds.has(item.id)
+          ? { ...item, isAlternative: item.id !== data.selectedMessageId }
+          : item),
+      })));
+    } catch (error) {
+      window.alert(error.message);
+    }
+  }, [activeId, typing]);
 
   const handleSuggestionResolve = useCallback(async (messageId, suggestion, confirmed) => {
     if (confirmed) {
@@ -900,9 +963,10 @@ useEffect(() => {
             <div style={{flex:1,height:"0.5px",background:"rgba(0,0,0,0.06)"}} />
           </div>
 
-          {messages.map((msg, index) => <Bubble key={msg.id} msg={msg} onSuggestionResolve={handleSuggestionResolve} onRetry={handleRetryMessage}
-            onRegenerate={handleRegenerate} onEdit={handleEditAndResend} disabled={typing}
-            canRegenerate={msg.role === "ai" && index === messages.length - 1 && !msg.id?.toString().startsWith("stream-")} />)}
+          {displayMessages.map((msg, index) => <Bubble key={msg.variantRootId || msg.id} msg={msg} onSuggestionResolve={handleSuggestionResolve} onRetry={handleRetryMessage}
+            onRegenerate={handleRegenerate} onEdit={handleEditAndResend} onVariantSelect={handleVariantSelect} disabled={typing}
+            canSwitchVariant={msg.role === "ai" && index === displayMessages.length - 1}
+            canRegenerate={msg.role === "ai" && index === displayMessages.length - 1 && !msg.id?.toString().startsWith("stream-")} />)}
 
           {/* 打字动画 */}
           {typing && !messages.some((message) => message.deliveryStatus === "streaming") && (
