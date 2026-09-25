@@ -24,6 +24,10 @@ function formatMoney(value, exchangeRate = 6.7) {
   return `$${amount.toFixed(4)} · ¥${(amount * exchangeRate).toFixed(2)}`;
 }
 
+function formatSeconds(value) {
+  return Number.isFinite(Number(value)) ? `${(Number(value) / 1000).toFixed(1)}s` : "—";
+}
+
 function Field({ label, children }) {
   return <label className="api-field"><span>{label}</span>{children}</label>;
 }
@@ -183,9 +187,9 @@ export default function ApiModelsPage({ open, onClose }) {
           <article className="saved"><span>今日缓存节省</span><strong>{formatMoney(usageSummary.today.cacheSavings, exchangeRate)}</strong></article>
           <article><span>本月总费用</span><strong>{formatMoney(usageSummary.month.actualCost, exchangeRate)}</strong></article>
           <article className="saved"><span>本月缓存节省</span><strong>{formatMoney(usageSummary.month.cacheSavings, exchangeRate)}</strong></article>
-        </div><p className="api-cost-note">人民币按固定汇率 1 美元 = ¥{exchangeRate} 换算。费用优先采用接口实际返回值；无法返回费用的调用不计入合计。</p></>}
+        </div><p className="api-cost-note">人民币按固定汇率 1 美元 = ¥{exchangeRate} 换算。OpenRouter 优先采用接口实际费用；DeepSeek 直连根据官方高峰/非高峰、缓存命中和输出价格估算。</p></>}
         {!usageLoading && !usageEvents.length ? <div className="api-empty"><i className="ti ti-chart-bar" /><h3>还没有调用记录</h3><p>发送一条聊天消息后回来刷新，就能看到本轮的 token 和缓存数据。</p></div> : <div className="api-usage-list">{usageEvents.map((event) => <article className="api-usage-row" key={event.id}>
-          <div className="api-usage-main"><strong>{event.purpose}</strong><span>{event.resolvedModel || event.requestedModel || "未知模型"}</span><small>{formatUsageTime(event.startedAt)}</small></div>
+          <div className="api-usage-main"><strong>{event.purpose}</strong><span>{event.resolvedModel || event.requestedModel || "未知模型"}</span><small>{formatUsageTime(event.startedAt)}{event.costSource === "catalog_estimate" ? " · 按官方价估算" : event.costSource === "provider_reported" ? " · 接口实际费用" : ""}</small>{event.purpose === "companion_chat" && <small>准备 {formatSeconds(event.preparationMs)} · 首字 {formatSeconds(event.firstTokenMs)} · 模型 {formatSeconds(event.durationMs)}</small>}</div>
           <div className="api-usage-stat cost"><span>本次费用</span><strong>{formatMoney(event.actualCost, exchangeRate)}</strong></div>
           <div className={`api-usage-stat saving ${Number(event.cacheSavings) > 0 ? "hit" : ""}`}><span>缓存节省</span><strong>{formatMoney(event.cacheSavings, exchangeRate)}</strong></div>
           <div className="api-usage-stat"><span>输入</span><strong>{number.format(event.inputTokens)}</strong></div>
