@@ -508,7 +508,7 @@ function InputBar({ onSend, generating, onStop }) {
 
   const handleSend = async () => {
     if (!text.trim() || sending || generating) return;
-    const pendingText = text.trim();
+    const pendingText = text;
     setSending(true);
     const succeeded = await onSend(pendingText);
     setSending(false);
@@ -823,8 +823,8 @@ useEffect(() => {
   const handleEditAndResend = useCallback((message) => {
     if (typing) return;
     const edited = window.prompt("编辑这条消息并重新发送", message.text);
-    if (!edited?.trim() || edited.trim() === message.text) return;
-    handleSend(edited.trim(), null, "edit", message.id);
+    if (!edited?.trim() || edited === message.text) return;
+    handleSend(edited, null, "edit", message.id);
   }, [typing, handleSend]);
 
   const handleVariantSelect = useCallback(async (message, nextIndex) => {
