@@ -23,6 +23,17 @@ function dayLabel(value) {
     .format(new Date(`${value}T12:00:00+08:00`));
 }
 
+function diaryFailureLabel(code) {
+  const labels = {
+    empty_reply:"整理模型没有返回内容，可以重试",
+    output_length:"这一天内容较多，模型输出被截断，可以重试",
+    invalid_json:"整理模型返回的格式不完整，可以重试",
+    source_message_missing:"有一条原始消息暂时无法读取",
+    diary_generation_failed:"整理时发生临时错误，可以重试",
+  };
+  return labels[code] || `整理失败（${code || "原因未知"}）`;
+}
+
 function SourceMessages({ entryId }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState(null);
@@ -80,8 +91,6 @@ export default function GroundedDiarySettings() {
   const jobs = useMemo(() => latestBy(state.jobs, "shared_day_id"), [state.jobs]);
   const redCount = entries.filter((entry) => entry.status === "needs_review").length
     + [...jobs.values()].filter((job) => job.status === "failed" && !entries.some((entry) => entry.shared_day_id === job.shared_day_id)).length;
-  const openDay = state.days.find((day) => day.latestVersion?.boundary_state === "open");
-
   async function retry(sharedDayId) {
     try {
       setMessage("正在重新整理这一天…");
@@ -108,13 +117,24 @@ export default function GroundedDiarySettings() {
   }
 
   async function endToday() {
-    if (!openDay || !window.confirm("确认今天的相处已经结束，并立即开始写日记吗？之后继续聊天也不会丢失，新消息会形成追加版本。")) return;
+    if (!window.confirm("确认今天的相处已经结束，并立即开始写日记吗？之后继续聊天也不会丢失，新消息会形成追加版本。")) return;
     try {
-      setAction("seal"); setMessage("正在封存今天，并开始写日记…");
-      await api(`/diary/shared-days/${openDay.id}/seal`, {
+      setAction("seal"); setMessage("正在刷新今天的原话并封存…");
+      await api("/diary/shared-days/rebuild", {
         method:"POST", headers:{"Content-Type":"application/json"}, body:"{}",
       });
-      await api(`/diary/shared-days/${openDay.id}/generate`, {
+      const refreshed = await api("/diary/shared-days");
+      const currentOpenDay = (refreshed.days || []).find((day) => day.latestVersion?.boundary_state === "open");
+      if (!currentOpenDay) {
+        setState((previous) => ({...previous, days:refreshed.days || []}));
+        setMessage("当前没有尚未结束的相处记录；如果刚刚已经结束过，就不需要重复操作。");
+        return;
+      }
+      setMessage("正在封存今天，并开始写日记…");
+      await api(`/diary/shared-days/${currentOpenDay.id}/seal`, {
+        method:"POST", headers:{"Content-Type":"application/json"}, body:"{}",
+      });
+      await api(`/diary/shared-days/${currentOpenDay.id}/generate`, {
         method:"POST", headers:{"Content-Type":"application/json"}, body:"{}",
       });
       await load(false);
@@ -132,7 +152,7 @@ export default function GroundedDiarySettings() {
       <button type="button" onClick={generateSample} disabled={Boolean(action)} style={{border:"0.5px solid rgba(0,0,0,.08)",borderRadius:12,padding:"9px 8px",background:"#F1EFE9",fontSize:10.5,color:"#3C3C3E",cursor:action?"default":"pointer",opacity:action?0.55:1}}>
         {action === "sample" ? "正在挑选…" : "生成 3 篇验收样本"}
       </button>
-      <button type="button" onClick={endToday} disabled={!openDay || Boolean(action)} style={{border:0,borderRadius:12,padding:"9px 8px",background:openDay?"#1C1C1E":"#E5E5E5",fontSize:10.5,color:openDay?"#fff":"#A1A1A6",cursor:openDay&&!action?"pointer":"default",opacity:action?0.55:1}}>
+      <button type="button" onClick={endToday} disabled={loading || Boolean(action)} style={{border:0,borderRadius:12,padding:"9px 8px",background:!loading?"#1C1C1E":"#E5E5E5",fontSize:10.5,color:!loading?"#fff":"#A1A1A6",cursor:!loading&&!action?"pointer":"default",opacity:action?0.55:1}}>
         {action === "seal" ? "正在结束…" : "结束今天并写日记"}
       </button>
     </div>
@@ -163,6 +183,7 @@ export default function GroundedDiarySettings() {
       })}
       {[...jobs.values()].filter((job)=>job.status === "failed" && !entries.some((entry)=>entry.shared_day_id===job.shared_day_id)).map((job)=><article key={job.id} style={{...panel,background:"#FFF8F7",borderColor:"rgba(166,61,64,.22)"}}>
         <div style={{display:"flex",justifyContent:"space-between"}}><div><div style={{fontSize:9.5,color:"#A1A1A6"}}>{dayLabel(daysById.get(job.shared_day_id)?.day_key)}</div><strong style={{fontSize:12}}>这篇日记没有生成成功</strong></div><span style={{width:9,height:9,borderRadius:"50%",background:"#C84B4F"}} /></div>
+        <p style={{fontSize:10.5,lineHeight:1.55,color:"#6E3E3F",margin:"7px 0 0"}}>{diaryFailureLabel(job.error_code)}</p>
         <button type="button" onClick={()=>retry(job.shared_day_id)} style={{marginTop:9,border:0,borderRadius:999,padding:"7px 11px",background:"#1C1C1E",color:"white",fontSize:10.5,cursor:"pointer"}}>重试</button>
       </article>)}
       {[...jobs.values()].filter((job)=>["queued","running"].includes(job.status)).map((job)=><div key={job.id} style={panel}><span style={{fontSize:10.5,color:"#8E8E93"}}>正在后台整理 {dayLabel(daysById.get(job.shared_day_id)?.day_key)}…</span></div>)}
