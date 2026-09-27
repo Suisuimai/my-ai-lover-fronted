@@ -52,6 +52,7 @@ export default function GroundedDiarySettings() {
   const [state, setState] = useState({ days:[], entries:[], jobs:[] });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [action, setAction] = useState("");
   const load = useCallback(async (prepare = false) => {
     try {
       const data = prepare ? await syncLatestGroundedDiary() : await (async () => {
@@ -79,6 +80,7 @@ export default function GroundedDiarySettings() {
   const jobs = useMemo(() => latestBy(state.jobs, "shared_day_id"), [state.jobs]);
   const redCount = entries.filter((entry) => entry.status === "needs_review").length
     + [...jobs.values()].filter((job) => job.status === "failed" && !entries.some((entry) => entry.shared_day_id === job.shared_day_id)).length;
+  const openDay = state.days.find((day) => day.latestVersion?.boundary_state === "open");
 
   async function retry(sharedDayId) {
     try {
@@ -90,11 +92,49 @@ export default function GroundedDiarySettings() {
     } catch (error) { setMessage(error.message); }
   }
 
+  async function generateSample() {
+    if (!window.confirm("将挑选 3 个不同类型的旧生活日，并按顺序调用便宜模型生成验收日记。继续吗？")) return;
+    try {
+      setAction("sample"); setMessage("正在建立 3 篇验收样本，系统会逐篇整理…");
+      const result = await api("/diary/backfill-sample", {
+        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({count:3}),
+      });
+      setMessage(result.selectedDays?.length
+        ? `已选中 ${result.selectedDays.length} 个旧生活日，正在后台逐篇生成。`
+        : "没有尚未生成过日记的旧生活日。");
+      await load(false);
+    } catch (error) { setMessage(error.message); }
+    finally { setAction(""); }
+  }
+
+  async function endToday() {
+    if (!openDay || !window.confirm("确认今天的相处已经结束，并立即开始写日记吗？之后继续聊天也不会丢失，新消息会形成追加版本。")) return;
+    try {
+      setAction("seal"); setMessage("正在封存今天，并开始写日记…");
+      await api(`/diary/shared-days/${openDay.id}/seal`, {
+        method:"POST", headers:{"Content-Type":"application/json"}, body:"{}",
+      });
+      await api(`/diary/shared-days/${openDay.id}/generate`, {
+        method:"POST", headers:{"Content-Type":"application/json"}, body:"{}",
+      });
+      await load(false);
+    } catch (error) { setMessage(error.message); }
+    finally { setAction(""); }
+  }
+
   return <div style={{marginTop:12}}>
     <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,marginBottom:12}}>
       <div><h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:21,fontWeight:400,margin:0}}>共同生活日记</h3>
         <p style={{fontSize:10.5,color:"#8E8E93",lineHeight:1.55,margin:"4px 0 0"}}>从早安到晚安。事实必须能回到原话；平时无需审核。</p></div>
       {redCount > 0 && <span style={{fontSize:10,color:"#A63D40",background:"#FAEAEA",borderRadius:999,padding:"4px 8px",whiteSpace:"nowrap"}}>{redCount} 个红点</span>}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:7,marginBottom:12}}>
+      <button type="button" onClick={generateSample} disabled={Boolean(action)} style={{border:"0.5px solid rgba(0,0,0,.08)",borderRadius:12,padding:"9px 8px",background:"#F1EFE9",fontSize:10.5,color:"#3C3C3E",cursor:action?"default":"pointer",opacity:action?0.55:1}}>
+        {action === "sample" ? "正在挑选…" : "生成 3 篇验收样本"}
+      </button>
+      <button type="button" onClick={endToday} disabled={!openDay || Boolean(action)} style={{border:0,borderRadius:12,padding:"9px 8px",background:openDay?"#1C1C1E":"#E5E5E5",fontSize:10.5,color:openDay?"#fff":"#A1A1A6",cursor:openDay&&!action?"pointer":"default",opacity:action?0.55:1}}>
+        {action === "seal" ? "正在结束…" : "结束今天并写日记"}
+      </button>
     </div>
     {message && <p style={{fontSize:10.5,color:message.includes("正在")?"#8E6A2F":"#A63D40",lineHeight:1.5}}>{message}</p>}
     {loading && <div style={panel}><span style={{fontSize:11,color:"#8E8E93"}}>正在整理日期边界…</span></div>}
