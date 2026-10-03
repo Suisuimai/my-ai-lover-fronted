@@ -3,190 +3,84 @@ import { api } from "./api.js";
 import { syncLatestGroundedDiary } from "./diarySync.js";
 
 const panel = { border:"0.5px solid rgba(0,0,0,.07)", borderRadius:16, padding:14, background:"rgba(255,255,255,.72)" };
+const softButton = {border:"0.5px solid rgba(0,0,0,.08)",borderRadius:999,padding:"6px 10px",background:"#F1EFE9",color:"#3C3C3E",fontSize:10,cursor:"pointer"};
 
-function latestBy(items, key) {
-  const map = new Map();
-  for (const item of items || []) if (!map.has(item[key])) map.set(item[key], item);
-  return map;
-}
+function latestBy(items, key) { const map=new Map(); for(const item of items||[])if(!map.has(item[key]))map.set(item[key],item); return map; }
 
 export function DiaryBackgroundSync() {
-  useEffect(() => {
-    syncLatestGroundedDiary().catch((error) => console.info("Diary background sync deferred:", error.message));
-  }, []);
+  useEffect(()=>{ syncLatestGroundedDiary().catch((error)=>console.info("Diary background sync deferred:",error.message)); },[]);
   return null;
 }
 
 function dayLabel(value) {
-  if (!value) return "日期未知";
-  return new Intl.DateTimeFormat("zh-CN", { timeZone:"Asia/Shanghai", year:"numeric", month:"long", day:"numeric", weekday:"short" })
-    .format(new Date(`${value}T12:00:00+08:00`));
+  if(!value)return "日期未知";
+  return new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",year:"numeric",month:"long",day:"numeric",weekday:"short"}).format(new Date(`${value}T12:00:00+08:00`));
 }
 
 function diaryFailureLabel(code) {
-  const labels = {
-    empty_reply:"整理模型没有返回内容，可以重试",
-    output_length:"这一天内容较多，模型输出被截断，可以重试",
-    invalid_json:"整理模型返回的格式不完整，可以重试",
-    source_message_missing:"有一条原始消息暂时无法读取",
-    diary_generation_failed:"整理时发生临时错误，可以重试",
-  };
-  return labels[code] || `整理失败（${code || "原因未知"}）`;
+  const labels={empty_reply:"整理模型没有返回内容，可以重试",output_length:"这一天内容较多，模型输出被截断，可以重试",invalid_json:"整理模型返回的格式不完整，可以重试",source_message_missing:"有一条原始消息暂时无法读取",diary_generation_failed:"整理时发生临时错误，可以重试"};
+  return labels[code]||`整理失败（${code||"原因未知"}）`;
 }
 
-function SourceMessages({ entryId }) {
-  const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState(null);
-  const [error, setError] = useState("");
-  async function toggle() {
-    const next = !open; setOpen(next);
-    if (!next || messages) return;
-    try { const data = await api(`/diary/entries/${entryId}/sources`); setMessages(data.messages || []); }
-    catch (reason) { setError(reason.message); }
-  }
-  return <div style={{marginTop:10}}>
-    <button type="button" onClick={toggle} style={{border:0,background:"none",padding:0,color:"#8E8E93",fontSize:10.5,cursor:"pointer"}}>
-      {open ? "收起原话" : "查看当天原话"} <span aria-hidden="true">{open ? "↑" : "↓"}</span>
-    </button>
-    {open && <div style={{marginTop:9,borderLeft:"2px solid #E6E2D9",paddingLeft:10,maxHeight:260,overflowY:"auto"}}>
-      {error && <p style={{fontSize:10.5,color:"#B33A3A"}}>{error}</p>}
-      {!messages && !error && <p style={{fontSize:10.5,color:"#8E8E93"}}>正在读取原话…</p>}
-      {(messages || []).map((message) => <div key={message.id} style={{marginBottom:10}}>
-        <div style={{fontSize:9.5,color:"#A1A1A6"}}>{message.role === "user" ? "年妤" : "季疏"} · {new Date(message.occurredAt).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai"})}</div>
-        <div style={{fontSize:11,lineHeight:1.65,whiteSpace:"pre-wrap",color:"#3C3C3E"}}>{message.content}</div>
-      </div>)}
-    </div>}
-  </div>;
+function sentencesOf(text){return String(text||"").split(/(?<=[。！？!?])|\n+/).map((part)=>part.trim()).filter(Boolean);}
+function noteLabel(event){return event.event_kind==="relationship_note_added"?"妤妤留在这一天的话":"妤妤后来的补充";}
+
+function DiaryBody({text,events}) {
+  const [openAnchor,setOpenAnchor]=useState("");
+  const notes=(events||[]).filter((event)=>["factual_note_added","relationship_note_added"].includes(event.event_kind));
+  const whole=notes.filter((event)=>event.anchor_kind==="entry");
+  return <>
+    <div style={{fontSize:11.5,lineHeight:1.75,color:"#3C3C3E",marginTop:9}}>{sentencesOf(text).map((sentence,index)=>{
+      const anchored=notes.filter((event)=>event.anchor_kind==="sentence"&&event.anchor_text===sentence); const key=`${index}-${sentence.slice(0,20)}`;
+      return <span key={key}>{sentence}{anchored.length>0&&<button type="button" onClick={()=>setOpenAnchor(openAnchor===key?"":key)} title="查看妤妤的批注" style={{border:0,background:"none",color:"#A66C55",padding:"0 2px",cursor:"pointer",fontSize:12}}>●</button>} {openAnchor===key&&<span style={{display:"block",margin:"5px 0 8px",padding:"7px 9px",borderLeft:"2px solid #D8B7A8",background:"#FBF7F3",fontSize:10.5}}>{anchored.map((event)=><span key={event.id} style={{display:"block",marginBottom:3}}><b>{noteLabel(event)}：</b>{event.content}</span>)}</span>}</span>;
+    })}</div>
+    {whole.length>0&&<div style={{marginTop:10,paddingTop:8,borderTop:"0.5px solid rgba(0,0,0,.06)"}}>{whole.map((event)=><div key={event.id} style={{fontSize:10.5,lineHeight:1.6,color:"#6E5146",marginBottom:5}}><b>{noteLabel(event)}：</b>{event.content}</div>)}</div>}
+  </>;
+}
+
+function SourceMessages({entryId}) {
+  const [open,setOpen]=useState(false); const [messages,setMessages]=useState(null); const [error,setError]=useState("");
+  async function toggle(){const next=!open;setOpen(next);if(!next||messages)return;try{const data=await api(`/diary/entries/${entryId}/sources`);setMessages(data.messages||[]);}catch(reason){setError(reason.message);}}
+  return <div style={{marginTop:10}}><button type="button" onClick={toggle} style={{border:0,background:"none",padding:0,color:"#8E8E93",fontSize:10.5,cursor:"pointer"}}>{open?"收起原话 ↑":"查看当天原话 ↓"}</button>{open&&<div style={{marginTop:9,borderLeft:"2px solid #E6E2D9",paddingLeft:10,maxHeight:260,overflowY:"auto"}}>{error&&<p style={{fontSize:10.5,color:"#B33A3A"}}>{error}</p>}{!messages&&!error&&<p style={{fontSize:10.5,color:"#8E8E93"}}>正在读取原话…</p>}{(messages||[]).map((message)=><div key={message.id} style={{marginBottom:10}}><div style={{fontSize:9.5,color:"#A1A1A6"}}>{message.role==="user"?"年妤":"季疏"} · {new Date(message.occurredAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})}</div><div style={{fontSize:11,lineHeight:1.65,whiteSpace:"pre-wrap",color:"#3C3C3E"}}>{message.content}</div></div>)}</div>}</div>;
+}
+
+function AnnotationComposer({entry,onSaved,onError}) {
+  const [channel,setChannel]=useState("relationship"); const [anchor,setAnchor]=useState(""); const [content,setContent]=useState(""); const [saving,setSaving]=useState(false);
+  async function save(){if(!content.trim())return;try{setSaving(true);await api(`/diary/entries/${entry.id}/review`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:channel==="relationship"?"add_relationship_note":"add_factual_note",content,anchorKind:anchor?"sentence":"entry",anchorText:anchor||null})});setContent("");setAnchor("");await onSaved();}catch(error){onError(error.message);}finally{setSaving(false);}}
+  return <details style={{marginTop:10}}><summary style={{fontSize:10.5,color:"#7D675D",cursor:"pointer"}}>给这一天留句话</summary><div style={{display:"grid",gap:7,marginTop:8}}>
+    <select value={channel} onChange={(event)=>setChannel(event.target.value)} style={{padding:7,border:"0.5px solid #DDD7CF",borderRadius:9,background:"white",fontSize:10.5}}><option value="relationship">关系留言：感受、回应、撒娇</option><option value="factual">后来补充的背景</option></select>
+    <select value={anchor} onChange={(event)=>setAnchor(event.target.value)} style={{padding:7,border:"0.5px solid #DDD7CF",borderRadius:9,background:"white",fontSize:10.5}}><option value="">挂在整篇日记末尾</option>{sentencesOf(entry.body_markdown).map((sentence,index)=><option key={`${index}-${sentence}`} value={sentence}>挂在：{sentence.slice(0,45)}</option>)}</select>
+    <textarea value={content} onChange={(event)=>setContent(event.target.value)} rows={3} placeholder={channel==="relationship"?"写下你想留在这一天旁边的话…":"写下你后来确认的背景；它不会伪装成当日原话。"} style={{resize:"vertical",padding:9,border:"0.5px solid #DDD7CF",borderRadius:10,fontSize:11,lineHeight:1.6}}/>
+    <button type="button" onClick={save} disabled={saving||!content.trim()} style={{...softButton,justifySelf:"start",opacity:saving||!content.trim()?0.55:1}}>{saving?"正在保存…":"保存批注"}</button>
+  </div></details>;
 }
 
 export default function GroundedDiarySettings() {
-  const [state, setState] = useState({ days:[], entries:[], jobs:[] });
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const [action, setAction] = useState("");
-  const load = useCallback(async (prepare = false) => {
-    try {
-      const data = prepare ? await syncLatestGroundedDiary() : await (async () => {
-        const [days, entries, jobs] = await Promise.all([api("/diary/shared-days"), api("/diary/entries"), api("/diary/jobs")]);
-        return { days:days.days || [], entries:entries.entries || [], jobs:jobs.jobs || [] };
-      })();
-      setState(data); setMessage("");
-    } catch (error) { setMessage(error.message); }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data is loaded from the authenticated backend.
+  const [state,setState]=useState({days:[],entries:[],jobs:[],reviewEvents:[]}); const [loading,setLoading]=useState(true); const [message,setMessage]=useState(""); const [action,setAction]=useState("");
+  const load=useCallback(async(prepare=false)=>{try{const data=prepare?await syncLatestGroundedDiary():await(async()=>{const [days,entries,jobs,reviews]=await Promise.all([api("/diary/shared-days"),api("/diary/entries"),api("/diary/jobs"),api("/diary/review-events")]);return{days:days.days||[],entries:entries.entries||[],jobs:jobs.jobs||[],reviewEvents:reviews.events||[]};})();setState(data);setMessage("");}catch(error){setMessage(error.message);}finally{setLoading(false);}},[]);
+  useEffect(()=>{
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial authenticated data is loaded asynchronously.
     load(true);
-  }, [load]);
-  const active = state.jobs.some((job) => ["queued", "running"].includes(job.status));
-  useEffect(() => {
-    if (!active) return undefined;
-    const timer = window.setInterval(() => load(false), 3000);
-    return () => window.clearInterval(timer);
-  }, [active, load]);
+  },[load]); const active=state.jobs.some((job)=>["queued","running"].includes(job.status));
+  useEffect(()=>{if(!active)return undefined;const timer=window.setInterval(()=>load(false),3000);return()=>window.clearInterval(timer);},[active,load]);
+  const daysById=useMemo(()=>new Map(state.days.map((day)=>[day.id,day])),[state.days]); const entries=useMemo(()=>[...latestBy(state.entries,"shared_day_id").values()],[state.entries]); const jobs=useMemo(()=>latestBy(state.jobs,"shared_day_id"),[state.jobs]);
+  const eventsByDay=useMemo(()=>{const map=new Map();for(const event of state.reviewEvents||[]){if(!map.has(event.shared_day_id))map.set(event.shared_day_id,[]);map.get(event.shared_day_id).push(event);}return map;},[state.reviewEvents]);
 
-  const daysById = useMemo(() => new Map(state.days.map((day) => [day.id, day])), [state.days]);
-  const entries = useMemo(() => [...latestBy(state.entries, "shared_day_id").values()], [state.entries]);
-  const jobs = useMemo(() => latestBy(state.jobs, "shared_day_id"), [state.jobs]);
-  const redCount = entries.filter((entry) => entry.status === "needs_review").length
-    + [...jobs.values()].filter((job) => job.status === "failed" && !entries.some((entry) => entry.shared_day_id === job.shared_day_id)).length;
-  async function retry(sharedDayId) {
-    try {
-      setMessage("正在重新整理这一天…");
-      await api(`/diary/shared-days/${sharedDayId}/generate`, {
-        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({retry:true}),
-      });
-      await load(false);
-    } catch (error) { setMessage(error.message); }
-  }
+  async function postReview(entry,payload){try{setMessage("正在保存妤妤的确认…");await api(`/diary/entries/${entry.id}/review`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});await load(false);}catch(error){setMessage(error.message);}}
+  async function retry(dayId){try{setMessage("正在重新整理这一天…");await api(`/diary/shared-days/${dayId}/generate`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({retry:true})});await load(false);}catch(error){setMessage(error.message);}}
+  async function generateSample(){if(!window.confirm("将挑选 3 个旧生活日生成正式日记，用于验收。继续吗？"))return;try{setAction("sample");setMessage("正在建立 3 篇验收样本…");await api("/diary/backfill-sample",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({count:3})});await load(false);}catch(error){setMessage(error.message);}finally{setAction("");}}
+  async function endToday(){if(!window.confirm("确认今天的相处已经结束，并立即开始写日记吗？"))return;try{setAction("seal");setMessage("正在刷新今天的原话并封存…");await api("/diary/shared-days/rebuild",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});const refreshed=await api("/diary/shared-days");const open=(refreshed.days||[]).find((day)=>day.latestVersion?.boundary_state==="open");if(!open){setMessage("当前没有尚未结束的相处记录。");return;}await api(`/diary/shared-days/${open.id}/seal`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});await api(`/diary/shared-days/${open.id}/generate`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});await load(false);}catch(error){setMessage(error.message);}finally{setAction("");}}
 
-  async function generateSample() {
-    if (!window.confirm("将挑选 3 个不同类型的旧生活日，并按顺序调用便宜模型生成验收日记。继续吗？")) return;
-    try {
-      setAction("sample"); setMessage("正在建立 3 篇验收样本，系统会逐篇整理…");
-      const result = await api("/diary/backfill-sample", {
-        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({count:3}),
-      });
-      setMessage(result.selectedDays?.length
-        ? `已选中 ${result.selectedDays.length} 个旧生活日，正在后台逐篇生成。`
-        : "没有尚未生成过日记的旧生活日。");
-      await load(false);
-    } catch (error) { setMessage(error.message); }
-    finally { setAction(""); }
-  }
-
-  async function endToday() {
-    if (!window.confirm("确认今天的相处已经结束，并立即开始写日记吗？之后继续聊天也不会丢失，新消息会形成追加版本。")) return;
-    try {
-      setAction("seal"); setMessage("正在刷新今天的原话并封存…");
-      await api("/diary/shared-days/rebuild", {
-        method:"POST", headers:{"Content-Type":"application/json"}, body:"{}",
-      });
-      const refreshed = await api("/diary/shared-days");
-      const currentOpenDay = (refreshed.days || []).find((day) => day.latestVersion?.boundary_state === "open");
-      if (!currentOpenDay) {
-        setState((previous) => ({...previous, days:refreshed.days || []}));
-        setMessage("当前没有尚未结束的相处记录；如果刚刚已经结束过，就不需要重复操作。");
-        return;
-      }
-      setMessage("正在封存今天，并开始写日记…");
-      await api(`/diary/shared-days/${currentOpenDay.id}/seal`, {
-        method:"POST", headers:{"Content-Type":"application/json"}, body:"{}",
-      });
-      await api(`/diary/shared-days/${currentOpenDay.id}/generate`, {
-        method:"POST", headers:{"Content-Type":"application/json"}, body:"{}",
-      });
-      await load(false);
-    } catch (error) { setMessage(error.message); }
-    finally { setAction(""); }
-  }
-
-  return <div style={{marginTop:12}}>
-    <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,marginBottom:12}}>
-      <div><h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:21,fontWeight:400,margin:0}}>共同生活日记</h3>
-        <p style={{fontSize:10.5,color:"#8E8E93",lineHeight:1.55,margin:"4px 0 0"}}>从早安到晚安。事实必须能回到原话；平时无需审核。</p></div>
-      {redCount > 0 && <span style={{fontSize:10,color:"#A63D40",background:"#FAEAEA",borderRadius:999,padding:"4px 8px",whiteSpace:"nowrap"}}>{redCount} 个红点</span>}
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:7,marginBottom:12}}>
-      <button type="button" onClick={generateSample} disabled={Boolean(action)} style={{border:"0.5px solid rgba(0,0,0,.08)",borderRadius:12,padding:"9px 8px",background:"#F1EFE9",fontSize:10.5,color:"#3C3C3E",cursor:action?"default":"pointer",opacity:action?0.55:1}}>
-        {action === "sample" ? "正在挑选…" : "生成 3 篇验收样本"}
-      </button>
-      <button type="button" onClick={endToday} disabled={loading || Boolean(action)} style={{border:0,borderRadius:12,padding:"9px 8px",background:!loading?"#1C1C1E":"#E5E5E5",fontSize:10.5,color:!loading?"#fff":"#A1A1A6",cursor:!loading&&!action?"pointer":"default",opacity:action?0.55:1}}>
-        {action === "seal" ? "正在结束…" : "结束今天并写日记"}
-      </button>
-    </div>
-    {message && <p style={{fontSize:10.5,color:message.includes("正在")?"#8E6A2F":"#A63D40",lineHeight:1.5}}>{message}</p>}
-    {loading && <div style={panel}><span style={{fontSize:11,color:"#8E8E93"}}>正在整理日期边界…</span></div>}
-    {!loading && entries.length === 0 && redCount === 0 && <div style={panel}>
-      <p style={{fontSize:12,margin:0,color:"#3C3C3E"}}>还没有完成的日记。</p>
-      <p style={{fontSize:10.5,lineHeight:1.6,color:"#8E8E93",margin:"5px 0 0"}}>一天在晚安后封存；如果没有说晚安，会在下一天开始后补上。生成在后台进行，不影响聊天。</p>
-    </div>}
-    <div style={{display:"grid",gap:10}}>
-      {entries.map((entry) => {
-        const day = daysById.get(entry.shared_day_id); const review = entry.status === "needs_review";
-        return <article key={entry.id} style={{...panel,borderColor:review?"rgba(166,61,64,.22)":"rgba(0,0,0,.07)",background:review?"#FFF8F7":"rgba(255,255,255,.72)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"start"}}>
-            <div><div style={{fontSize:9.5,color:"#A1A1A6",marginBottom:4}}>{dayLabel(day?.day_key)}</div>
-              <strong style={{fontFamily:"'Cormorant Garamond','Noto Sans KR',serif",fontSize:17,fontWeight:500}}>{entry.title}</strong></div>
-            {review && <span title="有内容未通过原文校验" style={{width:9,height:9,borderRadius:"50%",background:"#C84B4F",marginTop:4,flexShrink:0}} />}
-          </div>
-          <div style={{whiteSpace:"pre-wrap",fontSize:11.5,lineHeight:1.75,color:"#3C3C3E",marginTop:9}}>{entry.body_markdown}</div>
-          {entry.current_state && <div style={{fontSize:10.5,color:"#6E6E73",marginTop:10,paddingTop:8,borderTop:"0.5px solid rgba(0,0,0,.06)"}}>那天结束时：{entry.current_state}</div>}
-          {review && <details style={{marginTop:10}}><summary style={{fontSize:10.5,color:"#A63D40",cursor:"pointer"}}>查看没有通过校验的地方</summary>
-            <div style={{marginTop:7}}>{(entry.validation_issues || []).map((issue,index)=><div key={`${issue.kind}-${index}`} style={{fontSize:10.5,lineHeight:1.6,color:"#6E3E3F",marginBottom:7}}>
-              {(issue.reasons || []).map((reason)=><div key={reason}>• {reason}</div>)}</div>)}</div>
-            <button type="button" onClick={()=>retry(entry.shared_day_id)} style={{border:0,borderRadius:999,padding:"7px 11px",background:"#1C1C1E",color:"white",fontSize:10.5,cursor:"pointer"}}>重新整理</button>
-          </details>}
-          <SourceMessages entryId={entry.id}/>
-        </article>;
-      })}
-      {[...jobs.values()].filter((job)=>job.status === "failed" && !entries.some((entry)=>entry.shared_day_id===job.shared_day_id)).map((job)=><article key={job.id} style={{...panel,background:"#FFF8F7",borderColor:"rgba(166,61,64,.22)"}}>
-        <div style={{display:"flex",justifyContent:"space-between"}}><div><div style={{fontSize:9.5,color:"#A1A1A6"}}>{dayLabel(daysById.get(job.shared_day_id)?.day_key)}</div><strong style={{fontSize:12}}>这篇日记没有生成成功</strong></div><span style={{width:9,height:9,borderRadius:"50%",background:"#C84B4F"}} /></div>
-        <p style={{fontSize:10.5,lineHeight:1.55,color:"#6E3E3F",margin:"7px 0 0"}}>{diaryFailureLabel(job.error_code)}</p>
-        <button type="button" onClick={()=>retry(job.shared_day_id)} style={{marginTop:9,border:0,borderRadius:999,padding:"7px 11px",background:"#1C1C1E",color:"white",fontSize:10.5,cursor:"pointer"}}>重试</button>
-      </article>)}
-      {[...jobs.values()].filter((job)=>["queued","running"].includes(job.status)).map((job)=><div key={job.id} style={panel}><span style={{fontSize:10.5,color:"#8E8E93"}}>正在后台整理 {dayLabel(daysById.get(job.shared_day_id)?.day_key)}…</span></div>)}
-    </div>
+  return <div style={{marginTop:12}}><div style={{marginBottom:12}}><h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:21,fontWeight:400,margin:0}}>共同生活日记</h3><p style={{fontSize:10.5,color:"#8E8E93",lineHeight:1.55,margin:"4px 0 0"}}>从早安到晚安。红点放着不会影响聊天；只确认你愿意担保的内容。</p></div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:7,marginBottom:12}}><button type="button" onClick={generateSample} disabled={Boolean(action)} style={{...softButton,borderRadius:12}}>{action==="sample"?"正在挑选…":"生成 3 篇验收样本"}</button><button type="button" onClick={endToday} disabled={loading||Boolean(action)} style={{border:0,borderRadius:12,padding:"9px 8px",background:!loading?"#1C1C1E":"#E5E5E5",fontSize:10.5,color:!loading?"#fff":"#A1A1A6"}}>{action==="seal"?"正在结束…":"结束今天并写日记"}</button></div>
+    {message&&<p style={{fontSize:10.5,color:message.includes("正在")?"#8E6A2F":"#A63D40",lineHeight:1.5}}>{message}</p>}{loading&&<div style={panel}><span style={{fontSize:11,color:"#8E8E93"}}>正在读取共同生活日记…</span></div>}{!loading&&entries.length===0&&<div style={panel}><p style={{fontSize:12,margin:0}}>还没有完成的日记。</p></div>}
+    <div style={{display:"grid",gap:10}}>{entries.map((entry)=>{const day=daysById.get(entry.shared_day_id);const review=entry.status==="needs_review";const events=eventsByDay.get(entry.shared_day_id)||[];const wholeEvents=events.filter((event)=>["entry_confirmed","entry_confirmation_revoked"].includes(event.event_kind));const canRevoke=wholeEvents.at(-1)?.event_kind==="entry_confirmed";return <article key={entry.id} style={{...panel,borderColor:review?"rgba(166,61,64,.22)":"rgba(0,0,0,.07)",background:review?"#FFF8F7":"rgba(255,255,255,.72)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:10}}><div><div style={{fontSize:9.5,color:"#A1A1A6",marginBottom:4}}>{dayLabel(day?.day_key)}</div><strong style={{fontFamily:"'Cormorant Garamond','Noto Sans KR',serif",fontSize:17,fontWeight:500}}>{entry.title}</strong></div>{review&&<span title="有内容等待妤妤判断" style={{width:9,height:9,borderRadius:"50%",background:"#C84B4F",marginTop:4}}/>}</div>
+      <DiaryBody text={entry.body_markdown} events={events}/>{entry.current_state&&<div style={{fontSize:10.5,color:"#6E6E73",marginTop:10,paddingTop:8,borderTop:"0.5px solid rgba(0,0,0,.06)"}}>那天结束时：{entry.current_state}</div>}
+      {review&&<details style={{marginTop:10}}><summary style={{fontSize:10.5,color:"#A63D40",cursor:"pointer"}}>查看需要妤妤判断的地方</summary><div style={{marginTop:8}}>{(entry.validation_issues||[]).map((issue,index)=><div key={`${issue.kind}-${index}`} style={{padding:"8px 0",borderBottom:"0.5px solid rgba(0,0,0,.06)",fontSize:10.5,lineHeight:1.55}}><div>{issue.text||"这篇日记目前保持草稿状态"}</div>{(issue.reasons||[]).map((reason)=><div key={reason} style={{color:"#8B5E5F"}}>• {reason}</div>)}{!["manual_retraction","imported_draft"].includes(issue.kind)&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}><button style={softButton} onClick={()=>postReview(entry,{action:"confirm_fact",issueIndex:index})}>这条是对的</button><button style={softButton} onClick={()=>window.confirm("确认这条说法不成立，并在新版本中排除它吗？")&&postReview(entry,{action:"exclude_fact",issueIndex:index})}>排除</button><button style={softButton} onClick={()=>{const value=window.prompt("请写下正确的说法。它会标记为妤妤后来的确认，不会伪装成当日原话。");if(value?.trim())postReview(entry,{action:"correct_fact",issueIndex:index,replacementText:value});}}>改对</button></div>}</div>)}</div><div style={{display:"flex",gap:7,marginTop:9}}><button style={{...softButton,background:"#1C1C1E",color:"white"}} onClick={()=>window.confirm("整篇通过表示你愿意为这篇日记签字。确认吗？")&&postReview(entry,{action:"confirm_entry"})}>整篇确认</button></div></details>}
+      {!review&&canRevoke&&<button type="button" onClick={()=>window.confirm("撤回后，这篇日记会回到草稿态，历史仍然保留。继续吗？")&&postReview(entry,{action:"revoke_entry"})} style={{border:0,background:"none",padding:"8px 0 0",fontSize:10,color:"#8E8E93",cursor:"pointer"}}>撤回整篇确认</button>}
+      <AnnotationComposer entry={entry} onSaved={()=>load(false)} onError={setMessage}/><SourceMessages entryId={entry.id}/>
+    </article>;})}
+    {[...jobs.values()].filter((job)=>job.status==="failed"&&!entries.some((entry)=>entry.shared_day_id===job.shared_day_id)).map((job)=><article key={job.id} style={{...panel,background:"#FFF8F7"}}><strong style={{fontSize:12}}>这篇日记没有生成成功</strong><p style={{fontSize:10.5,color:"#6E3E3F"}}>{diaryFailureLabel(job.error_code)}</p><button style={softButton} onClick={()=>retry(job.shared_day_id)}>重试</button></article>)}{[...jobs.values()].filter((job)=>["queued","running"].includes(job.status)).map((job)=><div key={job.id} style={panel}><span style={{fontSize:10.5,color:"#8E8E93"}}>正在后台整理 {dayLabel(daysById.get(job.shared_day_id)?.day_key)}…</span></div>)}</div>
   </div>;
 }
