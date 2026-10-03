@@ -55,6 +55,25 @@ function AnnotationComposer({entry,onSaved,onError}) {
   </div></details>;
 }
 
+function SourceIndexControl({onError}) {
+  const [status,setStatus]=useState(null); const [building,setBuilding]=useState(false);
+  const load=useCallback(async()=>{try{const data=await api("/memory-index/status");setStatus(data.status);}catch(error){onError(error.message);}},[onError]);
+  useEffect(()=>{
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- index status is loaded from the authenticated backend.
+    load();
+  },[load]);
+  async function build(){
+    if(status?.embeddingConfigured&&!window.confirm(`将使用 ${status.embeddingModel} 为原始消息建立语义坐标，会产生少量 embedding API 费用。继续吗？`))return;
+    try{setBuilding(true);let next=status;for(let step=0;step<5;step+=1){const data=await api("/memory-index/build",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({includeEmbeddings:true,embeddingLimit:192})});next=data.status;setStatus(next);if(next.lexicalCount>=next.sourceCount&&(!next.embeddingConfigured||next.embeddingCount>=next.sourceCount))break;}}catch(error){onError(error.message);}finally{setBuilding(false);}
+  }
+  if(!status)return null;
+  const complete=status.lexicalCount>=status.sourceCount&&(!status.embeddingConfigured||status.embeddingCount>=status.sourceCount);
+  return <details style={{...panel,marginBottom:10}}><summary style={{fontSize:10.5,color:"#6E6E73",cursor:"pointer"}}>原文索引 {complete?"· 已建立":"· 尚未完成"}</summary><div style={{marginTop:8,fontSize:10.5,lineHeight:1.6,color:"#6E6E73"}}>
+    <div>字词坐标：{status.lexicalCount}/{status.sourceCount}</div><div>{status.embeddingConfigured?`语义坐标（${status.embeddingModel}）：${status.embeddingCount}/${status.sourceCount}`:"语义坐标：尚未在“API 与模型”分配 embedding 模型"}</div>
+    {!complete&&<button type="button" onClick={build} disabled={building} style={{...softButton,marginTop:7}}>{building?"正在建立，关闭页面后可继续…":status.lexicalCount?"继续建立索引":"建立原文索引"}</button>}
+  </div></details>;
+}
+
 export default function GroundedDiarySettings() {
   const [state,setState]=useState({days:[],entries:[],jobs:[],reviewEvents:[]}); const [loading,setLoading]=useState(true); const [message,setMessage]=useState(""); const [action,setAction]=useState("");
   const load=useCallback(async(prepare=false)=>{try{const data=prepare?await syncLatestGroundedDiary():await(async()=>{const [days,entries,jobs,reviews]=await Promise.all([api("/diary/shared-days"),api("/diary/entries"),api("/diary/jobs"),api("/diary/review-events")]);return{days:days.days||[],entries:entries.entries||[],jobs:jobs.jobs||[],reviewEvents:reviews.events||[]};})();setState(data);setMessage("");}catch(error){setMessage(error.message);}finally{setLoading(false);}},[]);
@@ -73,7 +92,7 @@ export default function GroundedDiarySettings() {
 
   return <div style={{marginTop:12}}><div style={{marginBottom:12}}><h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:21,fontWeight:400,margin:0}}>共同生活日记</h3><p style={{fontSize:10.5,color:"#8E8E93",lineHeight:1.55,margin:"4px 0 0"}}>从早安到晚安。红点放着不会影响聊天；只确认你愿意担保的内容。</p></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:7,marginBottom:12}}><button type="button" onClick={generateSample} disabled={Boolean(action)} style={{...softButton,borderRadius:12}}>{action==="sample"?"正在挑选…":"生成 3 篇验收样本"}</button><button type="button" onClick={endToday} disabled={loading||Boolean(action)} style={{border:0,borderRadius:12,padding:"9px 8px",background:!loading?"#1C1C1E":"#E5E5E5",fontSize:10.5,color:!loading?"#fff":"#A1A1A6"}}>{action==="seal"?"正在结束…":"结束今天并写日记"}</button></div>
-    {message&&<p style={{fontSize:10.5,color:message.includes("正在")?"#8E6A2F":"#A63D40",lineHeight:1.5}}>{message}</p>}{loading&&<div style={panel}><span style={{fontSize:11,color:"#8E8E93"}}>正在读取共同生活日记…</span></div>}{!loading&&entries.length===0&&<div style={panel}><p style={{fontSize:12,margin:0}}>还没有完成的日记。</p></div>}
+    {message&&<p style={{fontSize:10.5,color:message.includes("正在")?"#8E6A2F":"#A63D40",lineHeight:1.5}}>{message}</p>}<SourceIndexControl onError={setMessage}/>{loading&&<div style={panel}><span style={{fontSize:11,color:"#8E8E93"}}>正在读取共同生活日记…</span></div>}{!loading&&entries.length===0&&<div style={panel}><p style={{fontSize:12,margin:0}}>还没有完成的日记。</p></div>}
     <div style={{display:"grid",gap:10}}>{entries.map((entry)=>{const day=daysById.get(entry.shared_day_id);const review=entry.status==="needs_review";const events=eventsByDay.get(entry.shared_day_id)||[];const wholeEvents=events.filter((event)=>["entry_confirmed","entry_confirmation_revoked"].includes(event.event_kind));const canRevoke=wholeEvents.at(-1)?.event_kind==="entry_confirmed";return <article key={entry.id} style={{...panel,borderColor:review?"rgba(166,61,64,.22)":"rgba(0,0,0,.07)",background:review?"#FFF8F7":"rgba(255,255,255,.72)"}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:10}}><div><div style={{fontSize:9.5,color:"#A1A1A6",marginBottom:4}}>{dayLabel(day?.day_key)}</div><strong style={{fontFamily:"'Cormorant Garamond','Noto Sans KR',serif",fontSize:17,fontWeight:500}}>{entry.title}</strong></div>{review&&<span title="有内容等待妤妤判断" style={{width:9,height:9,borderRadius:"50%",background:"#C84B4F",marginTop:4}}/>}</div>
       <DiaryBody text={entry.body_markdown} events={events}/>{entry.current_state&&<div style={{fontSize:10.5,color:"#6E6E73",marginTop:10,paddingTop:8,borderTop:"0.5px solid rgba(0,0,0,.06)"}}>那天结束时：{entry.current_state}</div>}
