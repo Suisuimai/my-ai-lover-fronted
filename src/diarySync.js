@@ -10,8 +10,8 @@ export async function syncLatestGroundedDiary() {
   await api("/diary/shared-days/rebuild", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
   });
-  const [dayData, entryData, jobData] = await Promise.all([
-    api("/diary/shared-days"), api("/diary/entries"), api("/diary/jobs"),
+  const [dayData, entryData, jobData, reviewData] = await Promise.all([
+    api("/diary/shared-days"), api("/diary/entries"), api("/diary/jobs"), api("/diary/review-events"),
   ]);
   const entries = latestBy(entryData.entries, "shared_day_id");
   const jobs = latestBy(jobData.jobs, "shared_day_id");
@@ -24,5 +24,5 @@ export async function syncLatestGroundedDiary() {
     });
     if (generation.job) jobItems = [generation.job, ...jobItems];
   }
-  return { days: dayData.days || [], entries: entryData.entries || [], jobs: jobItems };
+  return { days: dayData.days || [], entries: entryData.entries || [], jobs: jobItems, reviewEvents:reviewData.events || [] };
 }
