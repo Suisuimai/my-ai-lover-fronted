@@ -57,20 +57,25 @@ function AnnotationComposer({entry,onSaved,onError}) {
 
 function SourceIndexControl({onError}) {
   const [status,setStatus]=useState(null); const [building,setBuilding]=useState(false);
+  const [testQuery,setTestQuery]=useState(""); const [testResult,setTestResult]=useState(null); const [testing,setTesting]=useState(false);
   const load=useCallback(async()=>{try{const data=await api("/memory-index/status");setStatus(data.status);}catch(error){onError(error.message);}},[onError]);
   useEffect(()=>{
     // eslint-disable-next-line react-hooks/set-state-in-effect -- index status is loaded from the authenticated backend.
     load();
   },[load]);
   async function build(){
-    if(status?.embeddingConfigured&&!window.confirm(`将使用 ${status.embeddingModel} 为原始消息建立语义坐标，会产生少量 embedding API 费用。继续吗？`))return;
+    if(status?.embeddingConfigured&&!window.confirm(`将使用 ${status.embeddingModel} 为相邻原话窗口建立语义坐标。此操作会调用 embedding API；是否收费由你使用的服务商决定。继续吗？`))return;
     try{setBuilding(true);let next=status;for(let step=0;step<5;step+=1){const data=await api("/memory-index/build",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({includeEmbeddings:true,embeddingLimit:192})});next=data.status;setStatus(next);if(next.lexicalCount>=next.sourceCount&&(!next.embeddingConfigured||next.embeddingCount>=next.sourceCount))break;}}catch(error){onError(error.message);}finally{setBuilding(false);}
   }
+  async function testRecall(){
+    try{setTesting(true);setTestResult(null);const data=await api("/memory-index/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:testQuery})});setTestResult(data.test);}catch(error){onError(error.message);}finally{setTesting(false);}
+  }
   if(!status)return null;
-  const complete=status.lexicalCount>=status.sourceCount&&(!status.embeddingConfigured||status.embeddingCount>=status.sourceCount);
+  const total=status.windowCount??status.sourceCount; const complete=status.lexicalCount>=total&&(!status.embeddingConfigured||status.embeddingCount>=total);
   return <details style={{...panel,marginBottom:10}}><summary style={{fontSize:10.5,color:"#6E6E73",cursor:"pointer"}}>原文索引 {complete?"· 已建立":"· 尚未完成"}</summary><div style={{marginTop:8,fontSize:10.5,lineHeight:1.6,color:"#6E6E73"}}>
-    <div>字词坐标：{status.lexicalCount}/{status.sourceCount}</div><div>{status.embeddingConfigured?`语义坐标（${status.embeddingModel}）：${status.embeddingCount}/${status.sourceCount}`:"语义坐标：尚未在“API 与模型”分配 embedding 模型"}</div>
+    <div>相邻原话窗口：{total} 个（窗口里仍是原始消息，不生成摘要）</div><div>字词坐标：{status.lexicalCount}/{total}</div><div>{status.embeddingConfigured?`语义坐标（${status.embeddingModel}）：${status.embeddingCount}/${total}`:"语义坐标：尚未在“API 与模型”分配 embedding 模型"}</div>
     {!complete&&<button type="button" onClick={build} disabled={building} style={{...softButton,marginTop:7}}>{building?"正在建立，关闭页面后可继续…":status.lexicalCount?"继续建立索引":"建立原文索引"}</button>}
+    {status.lexicalCount>0&&<details style={{marginTop:9}}><summary style={{cursor:"pointer"}}>检索测试（不写入、不注入聊天）</summary><div style={{display:"grid",gap:6,marginTop:7}}><input value={testQuery} onChange={(event)=>setTestQuery(event.target.value)} placeholder="输入接近原话、换一种说法，或不存在的事" style={{border:"0.5px solid rgba(0,0,0,.12)",borderRadius:10,padding:"8px 9px",fontSize:10.5}}/><button type="button" onClick={testRecall} disabled={testing||!testQuery.trim()} style={softButton}>{testing?"正在检索…":"测试这句话"}</button>{testResult&&<div style={{padding:"8px",borderRadius:10,background:testResult.found?"#F1F7F0":"#FFF4F2"}}><strong>{testResult.found?`通过门槛：${testResult.accepted.map((item)=>item.dayKey).join("、")}`:"没有达到可靠门槛的已确认日记"}</strong><div>BM25 过门槛：{testResult.lexical.length} 个生活日</div><div>{testResult.embeddingModel?`${testResult.embeddingModel} 排名结果：${testResult.semantic.length} 个生活日（未标定，只参与排序）`:"本次没有使用语义坐标"}</div></div>}</div></details>}
   </div></details>;
 }
 

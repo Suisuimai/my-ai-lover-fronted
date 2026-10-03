@@ -4,6 +4,7 @@ import { api } from "./api.js";
 const PRESETS = {
   openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", apiFormat: "openai_compatible" },
   deepseek: { label: "DeepSeek 直连", baseUrl: "https://api.deepseek.com", apiFormat: "openai_compatible" },
+  siliconflow: { label: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", apiFormat: "openai_compatible" },
   anthropic: { label: "Anthropic 官方", baseUrl: "https://api.anthropic.com", apiFormat: "anthropic" },
   custom: { label: "", baseUrl: "https://", apiFormat: "openai_compatible" },
 };
@@ -39,7 +40,7 @@ function ConnectionEditor({ initial, onSave, onCancel, busy }) {
     {!initial.id && <Field label="快速模板"><select value={draft.preset || "openrouter"} onChange={(event) => {
       const preset = event.target.value;
       setDraft((current) => ({ ...current, ...PRESETS[preset], preset }));
-    }}><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek 直连</option><option value="anthropic">Anthropic 官方</option><option value="custom">完全自定义</option></select></Field>}
+    }}><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek 直连</option><option value="siliconflow">硅基流动</option><option value="anthropic">Anthropic 官方</option><option value="custom">完全自定义</option></select></Field>}
     <div className="api-form-grid">
       <Field label="连接名称"><input value={draft.label || ""} onChange={(event) => change("label", event.target.value)} placeholder="例如：主力中转" /></Field>
       <Field label="接口格式"><select value={draft.apiFormat} onChange={(event) => change("apiFormat", event.target.value)}><option value="openai_compatible">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select></Field>
