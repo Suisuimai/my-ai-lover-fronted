@@ -21,6 +21,27 @@ function diaryStageLabel(stage){return {source_read:"读取原文",model_request
 function sentencesOf(text){return String(text||"").split(/(?<=[。！？!?])|\n+/).map((part)=>part.trim()).filter(Boolean);}
 function noteLabel(event){return event.event_kind==="relationship_note_added"?"妤妤留在这一天的话":"妤妤后来的补充";}
 
+function HighlightedText({text,terms=[]}){
+  const useful=[...new Set(terms.filter(Boolean))].sort((left,right)=>right.length-left.length);
+  if(!useful.length)return text;
+  const escaped=useful.map((term)=>term.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"));
+  const matcher=new RegExp(`(${escaped.join("|")})`,"gi");
+  return String(text||"").split(matcher).map((part,index)=>useful.some((term)=>term.toLowerCase()===part.toLowerCase())?<mark key={`${index}-${part}`} style={{background:"#F6E5A9",color:"inherit",padding:0}}>{part}</mark>:part);
+}
+
+function RecallResult({result,stability}){
+  return <div style={{padding:9,borderRadius:10,background:result.found?"#F1F7F0":"#FFF4F2"}}>
+    <strong>{result.found?`找到可回源的原话：${result.accepted.map((item)=>item.dayKey).join("、")}`:"没有找到带真实字面证据的旧事"}</strong>
+    {stability&&<div style={{marginTop:4,color:stability.stable?"#47734B":"#A63D40"}}>连续两次结果{stability.stable?"一致":"不一致"}{stability.stable?"。":"，请保留这次结果供排查。"}</div>}
+    {result.accepted.some((item)=>!item.confirmed)&&<div style={{marginTop:3,color:"#8E6A2F"}}>其中有日期的日记尚未确认；聊天召回时只使用原话，不带日记与批注。</div>}
+    {result.accepted.map((item)=><details key={item.dayKey} style={{marginTop:7,paddingTop:7,borderTop:"0.5px solid rgba(0,0,0,.07)"}}><summary style={{cursor:"pointer",color:"#3C3C3E"}}><b>{item.dayKey}</b> · {item.channels?.join(" + ")||"BM25"} · {item.confirmed?"日记已确认":"仅原话可用"} · RRF {Number(item.score||0).toFixed(4)}</summary><div style={{marginTop:5}}>
+      <div>实际字面命中：{item.matchedTerms?.length?item.matchedTerms.join("、"):"未显示"}</div>
+      <div style={{marginTop:5,borderLeft:"2px solid #D9D5CC",paddingLeft:8,maxHeight:220,overflowY:"auto"}}>{(item.evidence||[]).map((message)=><div key={message.id} style={{marginBottom:7}}><span style={{color:"#8E8E93"}}>{message.role==="user"?"妤妤":"季疏"}：</span><span style={{whiteSpace:"pre-wrap"}}><HighlightedText text={message.content} terms={item.matchedTerms}/></span></div>)}</div>
+    </div></details>)}
+    <details style={{marginTop:8}}><summary style={{cursor:"pointer",color:"#6E6E73"}}>查看两路排名明细</summary><div style={{marginTop:5}}><div>BM25 字面候选（这里只显示前 5，最终候选可能来自完整排名）：{result.lexical.length} 个生活日</div>{result.lexical.length>0&&<div style={{paddingLeft:7}}>↳ {result.lexical.map((item)=>`${item.dayKey} · ${item.score.toFixed(3)}${item.confirmed?" · 日记已确认":" · 日记未确认"}`).join("；")}</div>}<div style={{marginTop:4}}>{result.embeddingModel?`${result.embeddingModel} 排名结果：${result.semantic.length} 个生活日（未标定，只参与 RRF 排序，不能单独召回）`:"本次没有使用语义坐标"}</div>{result.semantic.length>0&&<div style={{paddingLeft:7}}>↳ {result.semantic.map((item)=>`${item.dayKey} · ${item.score.toFixed(3)}${item.confirmed?" · 日记已确认":" · 日记未确认"}`).join("；")}</div>}</div></details>
+  </div>;
+}
+
 function DiaryBody({text,events}) {
   const [openAnchor,setOpenAnchor]=useState("");
   const notes=(events||[]).filter((event)=>["factual_note_added","relationship_note_added"].includes(event.event_kind));
@@ -53,7 +74,7 @@ function AnnotationComposer({entry,onSaved,onError}) {
 
 function SourceIndexControl({onError}) {
   const [status,setStatus]=useState(null); const [building,setBuilding]=useState(false);
-  const [testQuery,setTestQuery]=useState(""); const [testResult,setTestResult]=useState(null); const [testing,setTesting]=useState(false);
+  const [testQuery,setTestQuery]=useState(""); const [testResult,setTestResult]=useState(null); const [testing,setTesting]=useState(false); const [stability,setStability]=useState(null);
   const load=useCallback(async()=>{try{const data=await api("/memory-index/status");setStatus(data.status);}catch(error){onError(error.message);}},[onError]);
   useEffect(()=>{
     // eslint-disable-next-line react-hooks/set-state-in-effect -- index status is loaded from the authenticated backend.
@@ -64,14 +85,25 @@ function SourceIndexControl({onError}) {
     try{setBuilding(true);let next=status;for(let step=0;step<5;step+=1){const data=await api("/memory-index/build",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({includeEmbeddings:true,embeddingLimit:192})});next=data.status;setStatus(next);if(next.lexicalCount>=next.sourceCount&&(!next.embeddingConfigured||next.embeddingCount>=next.sourceCount))break;}}catch(error){onError(error.message);}finally{setBuilding(false);}
   }
   async function testRecall(){
-    try{setTesting(true);setTestResult(null);const data=await api("/memory-index/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:testQuery})});setTestResult(data.test);}catch(error){onError(error.message);}finally{setTesting(false);}
+    try{setTesting(true);setTestResult(null);setStability(null);const data=await api("/memory-index/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:testQuery})});setTestResult(data.test);}catch(error){onError(error.message);}finally{setTesting(false);}
+  }
+  async function testRecallTwice(){
+    try{setTesting(true);setTestResult(null);setStability(null);const request=()=>api("/memory-index/test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:testQuery})});const first=await request();const second=await request();const firstDays=(first.test.accepted||[]).map((item)=>item.dayKey);const secondDays=(second.test.accepted||[]).map((item)=>item.dayKey);setTestResult(second.test);setStability({stable:JSON.stringify(firstDays)===JSON.stringify(secondDays),firstDays,secondDays});}catch(error){onError(error.message);}finally{setTesting(false);}
   }
   if(!status)return null;
   const total=status.windowCount??status.sourceCount; const complete=status.lexicalCount>=total&&(!status.embeddingConfigured||status.embeddingCount>=total);
   return <details style={{...panel,marginBottom:10}}><summary style={{fontSize:10.5,color:"#6E6E73",cursor:"pointer"}}>原文索引 {complete?"· 已建立":"· 尚未完成"}</summary><div style={{marginTop:8,fontSize:10.5,lineHeight:1.6,color:"#6E6E73"}}>
     <div>相邻原话窗口：{total} 个（窗口里仍是原始消息，不生成摘要）</div><div>字词坐标：{status.lexicalCount}/{total}</div><div>{status.embeddingConfigured?`语义坐标（${status.embeddingModel}）：${status.embeddingCount}/${total}`:"语义坐标：尚未在“API 与模型”分配 embedding 模型"}</div>
     {!complete&&<button type="button" onClick={build} disabled={building} style={{...softButton,marginTop:7}}>{building?"正在建立，关闭页面后可继续…":status.lexicalCount?"继续建立索引":"建立原文索引"}</button>}
-    {status.lexicalCount>0&&<details style={{marginTop:9}}><summary style={{cursor:"pointer"}}>检索测试（不写入、不注入聊天）</summary><div style={{display:"grid",gap:6,marginTop:7}}><input value={testQuery} onChange={(event)=>setTestQuery(event.target.value)} placeholder="输入接近原话、换一种说法，或不存在的事" style={{border:"0.5px solid rgba(0,0,0,.12)",borderRadius:10,padding:"8px 9px",fontSize:10.5}}/><button type="button" onClick={testRecall} disabled={testing||!testQuery.trim()} style={softButton}>{testing?"正在检索…":"测试这句话"}</button>{testResult&&<div style={{padding:"8px",borderRadius:10,background:testResult.found?"#F1F7F0":"#FFF4F2"}}><strong>{testResult.found?`找到可回源的原话：${testResult.accepted.map((item)=>item.dayKey).join("、")}`:"没有找到带真实字面证据的旧事"}</strong>{testResult.accepted.some((item)=>!item.confirmed)&&<div style={{marginTop:3,color:"#8E6A2F"}}>其中有日期的日记尚未确认；聊天召回时只使用原话，不带日记与批注。</div>}<div>BM25 字面候选：{testResult.lexical.length} 个生活日</div>{testResult.lexical.length>0&&<div style={{paddingLeft:7}}>↳ {testResult.lexical.map((item)=>`${item.dayKey} · ${item.score.toFixed(3)}${item.confirmed?" · 日记已确认":" · 日记未确认"}`).join("；")}</div>}<div>{testResult.embeddingModel?`${testResult.embeddingModel} 排名结果：${testResult.semantic.length} 个生活日（未标定，只参与 RRF 排序，不能单独召回）`:"本次没有使用语义坐标"}</div>{testResult.semantic.length>0&&<div style={{paddingLeft:7}}>↳ {testResult.semantic.map((item)=>`${item.dayKey} · ${item.score.toFixed(3)}${item.confirmed?" · 日记已确认":" · 日记未确认"}`).join("；")}</div>}</div>}</div></details>}
+    {status.lexicalCount>0&&<details style={{marginTop:9}}><summary style={{cursor:"pointer"}}>检索测试（不写入、不注入聊天）</summary><div style={{display:"grid",gap:6,marginTop:7}}><input value={testQuery} onChange={(event)=>setTestQuery(event.target.value)} placeholder="输入接近原话、换一种说法，或不存在的事" style={{border:"0.5px solid rgba(0,0,0,.12)",borderRadius:10,padding:"8px 9px",fontSize:10.5}}/><div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:6}}><button type="button" onClick={testRecall} disabled={testing||!testQuery.trim()} style={softButton}>{testing?"正在检索…":"测试一次"}</button><button type="button" onClick={testRecallTwice} disabled={testing||!testQuery.trim()} style={softButton}>{testing?"正在检索…":"连续测试两次"}</button></div>{testResult&&<RecallResult result={testResult} stability={stability}/>}</div></details>}
+  </div></details>;
+}
+
+function DeveloperTools({action,daysById,failedJobs,generateSample,onError,retry}){
+  return <details style={{...panel,marginBottom:12,background:"rgba(250,249,246,.72)"}}><summary style={{fontSize:10.5,color:"#6E6E73",cursor:"pointer"}}>开发 / 实验区</summary><div style={{display:"grid",gap:9,marginTop:9}}>
+    <button type="button" onClick={generateSample} disabled={Boolean(action)} style={{...softButton,justifySelf:"start"}}>{action==="sample"?"正在挑选…":"生成 3 篇验收样本"}</button>
+    {failedJobs.length>0&&<details><summary style={{fontSize:10.5,color:"#8B5E5F",cursor:"pointer"}}>失败记录与手动重试（{failedJobs.length}）</summary><div style={{display:"grid",gap:7,marginTop:7}}>{failedJobs.map((job)=>{const day=daysById.get(job.shared_day_id);return <div key={job.id} style={{padding:9,borderRadius:10,background:"#FFF8F7"}}><strong style={{fontSize:10.5}}>{dayLabel(day?.day_key)}</strong><div style={{fontSize:10,color:"#6E3E3F",marginTop:3}}>{diaryFailureLabel(job.error_code)}</div><div style={{fontSize:9.5,color:"#8E8E93",lineHeight:1.55}}>失败阶段：{diaryStageLabel(job.failure_stage)}{job.source_message_count!=null?` · 原文 ${job.source_message_count} 条`:""}{job.requested_model?` · 模型 ${job.requested_model}`:""}</div><button style={{...softButton,marginTop:6}} onClick={()=>retry(job.shared_day_id)}>重试</button></div>;})}</div></details>}
+    <SourceIndexControl onError={onError}/>
   </div></details>;
 }
 
@@ -84,7 +116,8 @@ export default function GroundedDiarySettings() {
   },[load]); const active=state.jobs.some((job)=>["queued","running"].includes(job.status));
   useEffect(()=>{if(!active)return undefined;const timer=window.setInterval(()=>load(),3000);return()=>window.clearInterval(timer);},[active,load]);
   const daysById=useMemo(()=>new Map(state.days.map((day)=>[day.id,day])),[state.days]); const entries=useMemo(()=>[...latestBy(state.entries,"shared_day_id").values()],[state.entries]); const jobs=useMemo(()=>latestBy(state.jobs,"shared_day_id"),[state.jobs]);
-  const timeline=useMemo(()=>{const entryDays=new Set(entries.map((entry)=>entry.shared_day_id));const items=[...entries.map((entry)=>({kind:"entry",entry,dayId:entry.shared_day_id})),...[...jobs.values()].filter((job)=>!entryDays.has(job.shared_day_id)&&["failed","queued","running"].includes(job.status)).map((job)=>({kind:"job",job,dayId:job.shared_day_id}))];return items.filter((item)=>!reviewOnly||(item.kind==="entry"&&item.entry.status==="needs_review")).sort((left,right)=>String(daysById.get(right.dayId)?.day_key||"").localeCompare(String(daysById.get(left.dayId)?.day_key||"")));},[daysById,entries,jobs,reviewOnly]);
+  const failedJobs=useMemo(()=>[...jobs.values()].filter((job)=>job.status==="failed"),[jobs]);
+  const timeline=useMemo(()=>{const entryDays=new Set(entries.map((entry)=>entry.shared_day_id));const items=[...entries.map((entry)=>({kind:"entry",entry,dayId:entry.shared_day_id})),...[...jobs.values()].filter((job)=>!entryDays.has(job.shared_day_id)&&["queued","running"].includes(job.status)).map((job)=>({kind:"job",job,dayId:job.shared_day_id}))];return items.filter((item)=>!reviewOnly||(item.kind==="entry"&&item.entry.status==="needs_review")).sort((left,right)=>String(daysById.get(right.dayId)?.day_key||"").localeCompare(String(daysById.get(left.dayId)?.day_key||"")));},[daysById,entries,jobs,reviewOnly]);
   const eventsByDay=useMemo(()=>{const map=new Map();for(const event of state.reviewEvents||[]){if(!map.has(event.shared_day_id))map.set(event.shared_day_id,[]);map.get(event.shared_day_id).push(event);}return map;},[state.reviewEvents]);
 
   async function postReview(entry,payload){try{setMessage("正在保存妤妤的确认…");await api(`/diary/entries/${entry.id}/review`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});await load();}catch(error){setMessage(error.message);}}
@@ -93,8 +126,9 @@ export default function GroundedDiarySettings() {
   async function endToday(){if(!window.confirm("确认今天的相处已经结束，并立即开始写日记吗？"))return;try{setAction("seal");setMessage("正在刷新今天的原话并封存…");await api("/diary/shared-days/rebuild",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});const refreshed=await api("/diary/shared-days");const open=(refreshed.days||[]).find((day)=>day.latestVersion?.boundary_state==="open");if(!open){setMessage("当前没有尚未结束的相处记录。");return;}await api(`/diary/shared-days/${open.id}/seal`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});await api(`/diary/shared-days/${open.id}/generate`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});await load();}catch(error){setMessage(error.message);}finally{setAction("");}}
 
   return <div style={{marginTop:12}}><div style={{marginBottom:12}}><h3 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:21,fontWeight:400,margin:0}}>共同生活日记</h3><p style={{fontSize:10.5,color:"#8E8E93",lineHeight:1.55,margin:"4px 0 0"}}>从早安到晚安。红点放着不会影响聊天；只确认你愿意担保的内容。</p></div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:7,marginBottom:12}}><button type="button" onClick={generateSample} disabled={Boolean(action)} style={{...softButton,borderRadius:12}}>{action==="sample"?"正在挑选…":"生成 3 篇验收样本"}</button><button type="button" onClick={endToday} disabled={loading||Boolean(action)} style={{border:0,borderRadius:12,padding:"9px 8px",background:!loading?"#1C1C1E":"#E5E5E5",fontSize:10.5,color:!loading?"#fff":"#A1A1A6"}}>{action==="seal"?"正在结束…":"结束今天并写日记"}</button></div>
-    {message&&<p style={{fontSize:10.5,color:message.includes("正在")?"#8E6A2F":"#A63D40",lineHeight:1.5}}>{message}</p>}<SourceIndexControl onError={setMessage}/>
+    <button type="button" onClick={endToday} disabled={loading||Boolean(action)} style={{width:"100%",border:0,borderRadius:12,padding:"9px 8px",marginBottom:12,background:!loading?"#1C1C1E":"#E5E5E5",fontSize:10.5,color:!loading?"#fff":"#A1A1A6"}}>{action==="seal"?"正在结束…":"结束今天并写日记"}</button>
+    {message&&<p style={{fontSize:10.5,color:message.includes("正在")?"#8E6A2F":"#A63D40",lineHeight:1.5}}>{message}</p>}
+    <DeveloperTools action={action} daysById={daysById} failedJobs={failedJobs} generateSample={generateSample} onError={setMessage} retry={retry}/>
     <label style={{display:"flex",alignItems:"center",gap:7,fontSize:10.5,color:"#6E6E73",margin:"0 0 10px 2px"}}><input type="checkbox" checked={reviewOnly} onChange={(event)=>setReviewOnly(event.target.checked)}/>只看待确认</label>
     {loading&&<div style={panel}><span style={{fontSize:11,color:"#8E8E93"}}>正在读取共同生活日记…</span></div>}{!loading&&timeline.length===0&&<div style={panel}><p style={{fontSize:12,margin:0}}>{reviewOnly?"目前没有待确认的日记。":"还没有完成的日记。"}</p></div>}
     <div style={{display:"grid",gap:10}}>{timeline.map((item)=>{if(item.kind==="job"){const job=item.job;const day=daysById.get(job.shared_day_id);if(job.status==="failed")return <article key={job.id} style={{...panel,background:"#FFF8F7"}}><div style={{fontSize:9.5,color:"#A1A1A6",marginBottom:4}}>{dayLabel(day?.day_key)}</div><strong style={{fontSize:12}}>这一天的日记没有生成成功</strong><p style={{fontSize:10.5,color:"#6E3E3F",marginBottom:5}}>{diaryFailureLabel(job.error_code)}</p><div style={{fontSize:9.5,color:"#8E8E93",lineHeight:1.55}}>失败阶段：{diaryStageLabel(job.failure_stage)}{job.source_message_count!=null?` · 原文 ${job.source_message_count} 条`:""}{job.requested_model?` · 模型 ${job.requested_model}`:""}</div><button style={{...softButton,marginTop:8}} onClick={()=>retry(job.shared_day_id)}>重试</button></article>;return <div key={job.id} style={panel}><span style={{fontSize:10.5,color:"#8E8E93"}}>正在后台整理 {dayLabel(day?.day_key)}…</span></div>;}const entry=item.entry;const day=daysById.get(entry.shared_day_id);const review=entry.status==="needs_review";const events=eventsByDay.get(entry.shared_day_id)||[];const wholeEvents=events.filter((event)=>["entry_confirmed","entry_confirmation_revoked"].includes(event.event_kind));const canRevoke=wholeEvents.at(-1)?.event_kind==="entry_confirmed";return <article key={entry.id} style={{...panel,borderColor:review?"rgba(166,61,64,.22)":"rgba(0,0,0,.07)",background:review?"#FFF8F7":"rgba(255,255,255,.72)"}}>

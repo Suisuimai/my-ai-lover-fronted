@@ -395,7 +395,7 @@ const grouped = {
 // ══════════════════════════════════════════
 //  Bubble
 // ══════════════════════════════════════════
-function Bubble({ msg, onSuggestionResolve, onRetry, onRegenerate, onEdit, onVariantSelect, canRegenerate, canSwitchVariant, disabled }) {
+function Bubble({ msg, onSuggestionResolve, onRetry, onRegenerate, onContinue, onEdit, onVariantSelect, canRegenerate, canSwitchVariant, disabled }) {
   const isUser = msg.role === "user";
   return (
     <div className={`flex gap-2 ${isUser ? "flex-row-reverse" : ""}`}
@@ -453,6 +453,12 @@ function Bubble({ msg, onSuggestionResolve, onRetry, onRegenerate, onEdit, onVar
           <div style={{display:"flex",alignItems:"center",gap:7,marginTop:5,fontSize:10,color:"#C0392B"}}>
             <span>发送失败，内容已保留</span>
             <button type="button" onClick={()=>onRetry(msg)} style={{border:0,borderRadius:9,padding:"4px 8px",background:"rgba(192,57,43,.09)",color:"#C0392B",fontSize:10,cursor:"pointer"}}>重试</button>
+          </div>
+        )}
+        {!isUser && msg.generationStatus?.startsWith("truncated_") && (
+          <div style={{marginTop:6,padding:"7px 9px",borderRadius:10,background:"rgba(192,57,43,.07)",color:"#8B3A3A",fontSize:10,lineHeight:1.5}}>
+            <div>本条回复被截断（{msg.generationStatus === "truncated_length" ? "达到输出上限" : msg.generationStatus === "truncated_eof" ? "数据流异常结束" : "没有收到明确结束信号"}）。已生成部分原样保留。</div>
+            <div style={{display:"flex",gap:6,marginTop:5}}><button type="button" disabled={disabled} onClick={()=>onContinue(msg)} style={{border:0,borderRadius:9,padding:"4px 8px",background:"rgba(192,57,43,.1)",color:"#8B3A3A",fontSize:10,cursor:"pointer"}}>继续生成</button>{canRegenerate&&<button type="button" disabled={disabled} onClick={()=>onRegenerate(msg)} style={{border:0,background:"transparent",padding:"4px 6px",color:"#8B3A3A",fontSize:10,cursor:"pointer"}}>重新生成</button>}</div>
           </div>
         )}
         {msg.deliveryStatus !== "sending" && (
@@ -624,6 +630,9 @@ const mapped = await Promise.all(data.map(async (session) => {
       text: message.content,
       isAlternative: message.context_status === "alternative",
       replacesMessageId: message.replaces_message_id || null,
+      generationStatus: message.generation_status || "complete",
+      finishReason: message.finish_reason || null,
+      continuesMessageId: message.continues_message_id || null,
       ts: new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     })),
   };
@@ -720,6 +729,7 @@ useEffect(() => {
         if (operation === "regenerate") {
           return { ...c, messages: c.messages.map((m) => m.id === targetMessageId ? { ...m, isAlternative: true } : m) };
         }
+        if (operation === "continue") return c;
         const existing = c.messages.some((m) => m.clientRequestId === clientRequestId);
         if (existing) return { ...c, messages: c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sending" } : m) };
         const isFirstUserMsg = !c.messages.some((m) => m.role === "user");
@@ -773,7 +783,7 @@ useEffect(() => {
                 messages: [
                   ...c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sent" } : m)
                     .filter((m) => m.id !== streamedId),
-                  ...(aiText ? [{ id: data.messageId || streamedId, role: "ai", text: aiText, ts: getNow(), replacesMessageId: operation === "regenerate" ? targetMessageId : null, wasStopped: result.event === "cancelled", followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
+                  ...(aiText ? [{ id: data.messageId || streamedId, role: "ai", text: aiText, ts: getNow(), replacesMessageId: operation === "regenerate" ? targetMessageId : null, continuesMessageId: operation === "continue" ? targetMessageId : null, generationStatus: data.generationStatus || (result.event === "cancelled" ? "stopped" : "complete"), finishReason: data.finishReason || null, wasStopped: result.event === "cancelled", followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
                 ],
               }
         )
@@ -818,6 +828,11 @@ useEffect(() => {
     const source = [...activeConv.messages.slice(0, index)].reverse().find((item) => item.role === "user");
     if (!source) return;
     handleSend(source.text, null, "regenerate", message.id);
+  }, [activeConv, typing, handleSend]);
+
+  const handleContinue = useCallback((message) => {
+    if (!activeConv || typing || !message?.id) return;
+    handleSend("继续上一条被截断的回复", null, "continue", message.id);
   }, [activeConv, typing, handleSend]);
 
   const handleEditAndResend = useCallback((message) => {
@@ -963,7 +978,7 @@ useEffect(() => {
           </div>
 
           {displayMessages.map((msg, index) => <Bubble key={msg.variantRootId || msg.id} msg={msg} onSuggestionResolve={handleSuggestionResolve} onRetry={handleRetryMessage}
-            onRegenerate={handleRegenerate} onEdit={handleEditAndResend} onVariantSelect={handleVariantSelect} disabled={typing}
+            onRegenerate={handleRegenerate} onContinue={handleContinue} onEdit={handleEditAndResend} onVariantSelect={handleVariantSelect} disabled={typing}
             canSwitchVariant={msg.role === "ai" && index === displayMessages.length - 1}
             canRegenerate={msg.role === "ai" && index === displayMessages.length - 1 && !msg.id?.toString().startsWith("stream-")} />)}
 

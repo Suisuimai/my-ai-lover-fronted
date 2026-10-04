@@ -190,14 +190,14 @@ export default function ApiModelsPage({ open, onClose }) {
           <article className="saved"><span>本月缓存节省</span><strong>{formatMoney(usageSummary.month.cacheSavings, exchangeRate)}</strong></article>
         </div><p className="api-cost-note">人民币按固定汇率 1 美元 = ¥{exchangeRate} 换算。OpenRouter 优先采用接口实际费用；DeepSeek 直连根据官方高峰/非高峰、缓存命中和输出价格估算。</p></>}
         {!usageLoading && !usageEvents.length ? <div className="api-empty"><i className="ti ti-chart-bar" /><h3>还没有调用记录</h3><p>发送一条聊天消息后回来刷新，就能看到本轮的 token 和缓存数据。</p></div> : <div className="api-usage-list">{usageEvents.map((event) => <article className="api-usage-row" key={event.id}>
-          <div className="api-usage-main"><strong>{event.purpose}</strong><span>{event.resolvedModel || event.requestedModel || "未知模型"}</span><small>{formatUsageTime(event.startedAt)}{event.costSource === "catalog_estimate" ? " · 按官方价估算" : event.costSource === "provider_reported" ? " · 接口实际费用" : ""}</small>{event.purpose === "companion_chat" && <small>准备 {formatSeconds(event.preparationMs)} · 首字 {formatSeconds(event.firstTokenMs)} · 模型 {formatSeconds(event.durationMs)}</small>}</div>
+          <div className="api-usage-main"><strong>{event.purpose}</strong><span>{event.resolvedModel || event.requestedModel || "未知模型"}</span><small>{formatUsageTime(event.startedAt)}{event.costSource === "catalog_estimate" ? " · 按官方价估算" : event.costSource === "provider_reported" ? " · 接口实际费用" : ""}</small>{event.purpose === "companion_chat" && <small>准备 {formatSeconds(event.preparationMs)} · 首字 {formatSeconds(event.firstTokenMs)} · 模型 {formatSeconds(event.durationMs)}</small>}{event.completionStatus&&event.completionStatus!=="complete"&&<small style={{color:"#c9342d"}}>终态：{event.completionStatus}{event.finishReason?` · ${event.finishReason}`:""}</small>}</div>
           <div className="api-usage-stat cost"><span>本次费用</span><strong>{formatMoney(event.actualCost, exchangeRate)}</strong></div>
           <div className={`api-usage-stat saving ${Number(event.cacheSavings) > 0 ? "hit" : ""}`}><span>缓存节省</span><strong>{formatMoney(event.cacheSavings, exchangeRate)}</strong></div>
           <div className="api-usage-stat"><span>输入</span><strong>{number.format(event.inputTokens)}</strong></div>
           <div className="api-usage-stat write"><span>缓存写入</span><strong>{number.format(event.cacheWriteTokens)}</strong></div>
           <div className={`api-usage-stat read ${event.cachedTokens > 0 ? "hit" : ""}`}><span>缓存读取</span><strong>{number.format(event.cachedTokens)}</strong></div>
           <div className="api-usage-stat"><span>输出</span><strong>{number.format(event.outputTokens)}</strong></div>
-          <span className={`api-status ${event.status === "succeeded" ? "on" : "off"}`}>{event.status === "succeeded" ? "成功" : "失败"}</span>
+          <span className={`api-status ${event.status === "succeeded" ? "on" : "off"}`}>{event.status === "succeeded" ? "成功" : event.status === "truncated" ? "截断" : "失败"}</span>
         </article>)}</div>}
       </section>}
     </main>
