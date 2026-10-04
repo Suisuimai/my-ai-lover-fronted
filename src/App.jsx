@@ -9,7 +9,6 @@ import MemoryJournalSettings from "./MemoryJournalSettings.jsx";
 import ApiModelsPage from "./ApiModelsPage.jsx";
 import PromptPreviewPage from "./PromptPreviewPage.jsx";
 import HandoffComposer from "./HandoffComposer.jsx";
-import { DiaryBackgroundSync } from "./GroundedDiarySettings.jsx";
 import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════
@@ -893,8 +892,6 @@ useEffect(() => {
   // ─────────────────────────────────────────
   return (
     <div style={{display:"flex",height:"100vh",width:"100%",overflow:"hidden",background:"#F7F6F3",fontFamily:"'DM Sans','Noto Sans KR',system-ui,sans-serif"}}>
-      <DiaryBackgroundSync />
-
       {/* ── 侧边栏 ── */}
       <Sidebar
         open={sidebarOpen}
