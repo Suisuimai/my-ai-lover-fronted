@@ -579,6 +579,7 @@ export default function App() {
 
   // ── UI 状态 ──────────────────────────────
   const [sidebarOpen,  setSidebarOpen]  = useState(false);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [apiModelsOpen, setApiModelsOpen] = useState(false);
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
@@ -906,7 +907,7 @@ useEffect(() => {
 
   // ─────────────────────────────────────────
   return (
-    <div style={{display:"flex",height:"100vh",width:"100%",overflow:"hidden",background:"#F7F6F3",fontFamily:"'DM Sans','Noto Sans KR',system-ui,sans-serif"}}>
+    <div style={{display:"flex",height:"100dvh",width:"100%",overflow:"hidden",background:"#F7F6F3",fontFamily:"'DM Sans','Noto Sans KR',system-ui,sans-serif"}}>
       {/* ── 侧边栏 ── */}
       <Sidebar
         open={sidebarOpen}
@@ -945,6 +946,7 @@ useEffect(() => {
               <i className="ti ti-edit" />
             </button>
             {/* 设置 — 点击打开 SettingsModal */}
+            <div className="header-actions-wide">
             <button onClick={handleRenameConversation} disabled={activeIsNew || !activeConv}
               title="Rename conversation"
               style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:activeIsNew?"default":"pointer",opacity:activeIsNew?0.35:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
@@ -960,6 +962,31 @@ useEffect(() => {
               style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:activeIsNew?"default":"pointer",opacity:activeIsNew?0.35:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
               <i className="ti ti-door-exit" />
             </button>
+            </div>
+            <div className="header-actions-narrow">
+              <button onClick={() => setHeaderMenuOpen((v) => !v)} aria-label="更多操作"
+                style={{width:32,height:32,borderRadius:"50%",border:"none",background:headerMenuOpen?"rgba(0,0,0,0.05)":"none",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
+                <i className="ti ti-dots" />
+              </button>
+              {headerMenuOpen && (
+                <>
+                  <div onClick={() => setHeaderMenuOpen(false)} style={{position:"fixed",inset:0,zIndex:40}} />
+                  <div style={{position:"absolute",right:0,top:38,zIndex:41,minWidth:168,background:"#fff",borderRadius:14,padding:6,boxShadow:"0 8px 30px rgba(0,0,0,0.12)",border:"0.5px solid rgba(0,0,0,0.06)"}}>
+                    {[
+                      ["ti-pencil", "重命名对话", handleRenameConversation],
+                      ["ti-door-exit", "结束窗口并生成交接", () => setHandoffOpen(true)],
+                      ["ti-trash", "删除对话", handleDeleteConversation],
+                    ].map(([icon, label, action]) => (
+                      <button key={label} disabled={activeIsNew || !activeConv}
+                        onClick={() => { setHeaderMenuOpen(false); action(); }}
+                        style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"11px 12px",border:0,borderRadius:10,background:"none",color:"#1C1C1E",fontSize:14,textAlign:"left",cursor:"pointer",opacity:(activeIsNew||!activeConv)?0.35:1}}>
+                        <i className={`ti ${icon}`} style={{fontSize:16,color:"#8E8E93"}} />{label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <button onClick={() => setSettingsOpen(true)}
               style={{width:32,height:32,borderRadius:"50%",border:"none",background:"none",color:"#8E8E93",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}
               onMouseEnter={e=>{e.currentTarget.style.background="rgba(0,0,0,0.05)";e.currentTarget.style.color="#1C1C1E";}}

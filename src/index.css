@@ -1,3 +1,32 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Native-app feel on touch screens: no double-tap zoom, no gray tap flash. */
+html, body, button, a, input, textarea, select {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+/* iOS zooms the page when focusing a field whose font is smaller than 16px. */
+@media (pointer: coarse) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+.header-actions-wide { display: flex; gap: 4px; }
+.header-actions-narrow { display: none; position: relative; }
+@media (max-width: 520px) {
+  .header-actions-wide { display: none; }
+  .header-actions-narrow { display: block; }
+}
