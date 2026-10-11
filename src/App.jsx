@@ -392,6 +392,12 @@ const grouped = {
   );
 }
 
+function formatRecallDay(dayKey) {
+  const [year, month, day] = String(dayKey).split("-").map(Number);
+  if (!year || !month || !day) return dayKey;
+  return `${year === new Date().getFullYear() ? "" : `${year}年`}${month}月${day}日`;
+}
+
 // ══════════════════════════════════════════
 //  Bubble
 // ══════════════════════════════════════════
@@ -422,6 +428,15 @@ function Bubble({ msg, onSuggestionResolve, onRetry, onRegenerate, onContinue, o
         >
           {msg.text}
         </div>
+        {!isUser && msg.recallInfo?.dayKey && (
+          <div title="这条回复生成前，系统让她想起的旧日子" style={{marginTop:5,padding:"3px 8px",borderRadius:9,background:"rgba(0,0,0,0.035)",fontSize:10.5,lineHeight:1.5,color:"#8E8E93",maxWidth:"100%",overflowWrap:"anywhere"}}>
+            <i className="ti ti-history" style={{marginRight:4}} />
+            想起了 {formatRecallDay(msg.recallInfo.dayKey)}
+            {msg.recallInfo.mode === "continued"
+              ? " · 接着上一轮的话题"
+              : msg.recallInfo.terms?.length ? ` · 因为：${msg.recallInfo.terms.join("、")}` : ""}
+          </div>
+        )}
         {msg.followUpSuggestion && !msg.followUpSuggestion.resolved && (
           <div style={{marginTop:6,padding:"8px 9px",borderRadius:10,background:"rgba(0,0,0,0.035)",border:"0.5px solid rgba(0,0,0,0.06)",fontSize:10.5,color:"#636366"}}>
             <div>{msg.followUpSuggestion.reason}：
@@ -634,6 +649,7 @@ const mapped = await Promise.all(data.map(async (session) => {
       generationStatus: message.generation_status || "complete",
       finishReason: message.finish_reason || null,
       continuesMessageId: message.continues_message_id || null,
+      recallInfo: message.recall_info || null,
       ts: new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     })),
   };
@@ -784,7 +800,7 @@ useEffect(() => {
                 messages: [
                   ...c.messages.map((m) => m.clientRequestId === clientRequestId ? { ...m, deliveryStatus: "sent" } : m)
                     .filter((m) => m.id !== streamedId),
-                  ...(aiText ? [{ id: data.messageId || streamedId, role: "ai", text: aiText, ts: getNow(), replacesMessageId: operation === "regenerate" ? targetMessageId : null, continuesMessageId: operation === "continue" ? targetMessageId : null, generationStatus: data.generationStatus || (result.event === "cancelled" ? "stopped" : "complete"), finishReason: data.finishReason || null, wasStopped: result.event === "cancelled", followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
+                  ...(aiText ? [{ id: data.messageId || streamedId, role: "ai", text: aiText, ts: getNow(), replacesMessageId: operation === "regenerate" ? targetMessageId : null, continuesMessageId: operation === "continue" ? targetMessageId : null, generationStatus: data.generationStatus || (result.event === "cancelled" ? "stopped" : "complete"), finishReason: data.finishReason || null, recallInfo: data.recallInfo || null, wasStopped: result.event === "cancelled", followUpSuggestion: data.followUpStatusSuggestion ? { ...data.followUpStatusSuggestion, sessionId: data.sessionId } : null }] : []),
                 ],
               }
         )
